@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: copilot-repo-web
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: APP_PASSWORD
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false

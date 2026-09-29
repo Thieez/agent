@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Copilot Repo</title>
+    <style>
+      :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
+      body { max-width: 960px; margin: 36px auto; padding: 0 18px; }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      h1 { font-size: 1.5rem; }
+      section { margin: 20px 0; padding: 20px; border: 1px solid #30363d; border-radius: 10px; background: #161b22; }
+      label { display: block; margin-bottom: 8px; font-weight: 600; }
+      input, select, textarea, button { box-sizing: border-box; padding: 10px 12px; border: 1px solid #30363d; border-radius: 7px; font: inherit; }
+      input, select, textarea { width: 100%; margin-bottom: 12px; background: #0d1117; color: inherit; }
+      textarea { min-height: 110px; resize: vertical; }
+      button { background: #238636; color: white; cursor: pointer; font-weight: 600; }
+      button.secondary { background: #21262d; border-color: #484f58; }
+      button:disabled { opacity: .55; cursor: wait; }
+      #log { min-height: 250px; max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border: 1px solid #30363d; border-radius: 7px; background: #010409; color: #c9d1d9; font: 13px ui-monospace, monospace; }
+      .row { display: flex; gap: 10px; }
+      .row > * { flex: 1; }
+      .muted { color: #8b949e; font-size: .9rem; }
+      @media (max-width: 600px) { .row { flex-direction: column; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Copilot Repo</h1>
+      <button id="logout" class="secondary" type="button">Wyloguj</button>
+    </header>
+    <p class="muted">Repozytoria są klonowane do tymczasowego katalogu Rendera. Używaj tylko zaufanych repozytoriów.</p>
+    <section>
+      <button id="copilot-login" type="button">Zaloguj Copilot przez GitHub</button>
+      <span id="copilot-status" class="muted">Copilot nie jest zalogowany w tej instancji.</span>
+      <p class="muted">Kliknij przycisk, a następnie otwórz w logu podany adres i wpisz kod na koncie GitHub, które ma subskrypcję Copilot.</p>
+    </section>
+    <section>
+      <form id="clone-form">
+        <label for="repo">Repozytorium GitHub</label>
+        <div class="row">
+          <input id="repo" name="repo" placeholder="właściciel/nazwa lub https://github.com/właściciel/nazwa" required>
+          <button type="submit">Klonuj</button>
+        </div>
+      </form>
+      <label for="repositories">Repozytorium do pracy</label>
+      <select id="repositories" aria-label="Repozytorium do pracy">
+        <option value="">Najpierw sklonuj repozytorium</option>
+      </select>
+    </section>
+    <section>
+      <form id="prompt-form">
+        <label for="prompt">Polecenie dla Copilot CLI</label>
+        <textarea id="prompt" name="prompt" maxlength="8000" placeholder="Np. przeanalizuj projekt i napraw błąd w ..." required></textarea>
+        <button type="submit">Uruchom Copilota</button>
+      </form>
+    </section>
+    <section>
+      <label>Log</label>
+      <pre id="log" aria-live="polite"></pre>
+    </section>
+    <script>
+      const log = document.querySelector("#log");
+      const repoSelect = document.querySelector("#repositories");
+      const cloneButton = document.querySelector('#clone-form button');
+      const promptButton = document.querySelector('#prompt-form button');
+      const copilotLoginButton = document.querySelector("#copilot-login");
+      const copilotStatus = document.querySelector("#copilot-status");
+      let socket;
+      let copilotAuthenticated = false;
+
+      function appendLog(text) {
+        log.textContent += text;
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function addRepository(repo) {
+        let option = [...repoSelect.options].find((item) => item.value === repo.id);
+        if (!option) {
+          if (repoSelect.options.length === 1 && !repoSelect.options[0].value) repoSelect.replaceChildren();
+          option = document.createElement("option");
+          option.value = repo.id;
+          option.textContent = repo.name;
+          repoSelect.append(option);
+        }
+        repoSelect.value = repo.id;
+      }
+
+      async function connect() {
+        const session = await fetch("/api/session");
+        if (!session.ok) return location.assign("/login");
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        socket = new WebSocket(`${protocol}//${location.host}/ws`);
+        socket.addEventListener("message", (event) => {
+          const message = JSON.parse(event.data);
+          if (message.type === "log") appendLog(message.text);
+          if (message.type === "error") appendLog(`\nBŁĄD: ${message.text}\n`);
+          if (message.type === "repo") addRepository(message);
+          if (message.type === "ready") {
+            message.repos.forEach(addRepository);
+            copilotAuthenticated = message.copilotAuthenticated;
+            copilotStatus.textContent = copilotAuthenticated
+              ? "Copilot jest zalogowany."
+              : "Copilot nie jest zalogowany w tej instancji.";
+          }
+          if (message.type === "copilot-authenticated") {
+            copilotAuthenticated = message.authenticated;
+            copilotStatus.textContent = copilotAuthenticated
+              ? "Copilot jest zalogowany."
+              : "Copilot nie jest zalogowany.";
+          }
+          if (message.type === "busy") {
+            cloneButton.disabled = message.busy;
+            promptButton.disabled = message.busy;
+            copilotLoginButton.disabled = message.busy;
+          }
+        });
+        socket.addEventListener("open", () => appendLog("Połączono z serwerem.\n"));
+        socket.addEventListener("close", () => appendLog("\nPołączenie WebSocket zostało zamknięte.\n"));
+        socket.addEventListener("error", () => appendLog("\nBłąd połączenia WebSocket.\n"));
+      }
+
+      document.querySelector("#clone-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        cloneButton.disabled = true;
+        socket.send(JSON.stringify({ type: "clone", repo: document.querySelector("#repo").value }));
+      });
+
+      copilotLoginButton.addEventListener("click", () => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        copilotLoginButton.disabled = true;
+        socket.send(JSON.stringify({ type: "copilot-login" }));
+      });
+
+      document.querySelector("#prompt-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!copilotAuthenticated) {
+          appendLog("Najpierw zaloguj Copilot przez GitHub.\n");
+          return;
+        }
+        if (!socket || socket.readyState !== WebSocket.OPEN || !repoSelect.value) {
+          appendLog("Wybierz sklonowane repozytorium.\n");
+          return;
+        }
+        promptButton.disabled = true;
+        socket.send(JSON.stringify({
+          type: "prompt",
+          repoId: repoSelect.value,
+          prompt: document.querySelector("#prompt").value
+        }));
+      });
+
+      document.querySelector("#logout").addEventListener("click", async () => {
+        await fetch("/api/logout", { method: "POST" });
+        location.assign("/login");
+      });
+
+      connect().catch(() => location.assign("/login"));
+    </script>
+  </body>
+</html>
