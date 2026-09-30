@@ -36,6 +36,12 @@
       .credential-heading { display: flex; justify-content: space-between; gap: 12px; }
       .credential-details { margin-top: 8px; }
       .credential-permissions { margin: 8px 0 0; padding-left: 20px; }
+      .credential-repos { margin-top: 14px; }
+      .credential-repos summary { cursor: pointer; font-weight: 600; }
+      .repo-list { display: grid; gap: 8px; margin-top: 10px; }
+      .repo-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid #30363d; border-radius: 7px; }
+      .repo-name { overflow-wrap: anywhere; }
+      .repo-clone { flex: 0 0 auto; padding: 7px 10px; }
       .credential-status { color: #3fb950; }
       .credential-status.invalid { color: #ff7b72; }
       .credential-status.unavailable { color: #d29922; }
@@ -54,18 +60,12 @@
     </header>
     <p class="muted">Każda zakładka uruchamia osobny terminal w wybranym repozytorium. Sesje terminali działają do zamknięcia zakładki lub wygaśnięcia sesji. Używaj tylko zaufanych repozytoriów.</p>
     <section>
-      <h2>Token z konfiguracji środowiska</h2>
-      <p class="muted">Tokenu nie dodaje się na stronie. Skonfiguruj go jako sekret GITHUB_TOKEN w usłudze Render. Wartość klucza nigdy nie jest wysyłana do przeglądarki.</p>
+      <h2>Tokeny i dostępne repozytoria</h2>
+      <p class="muted">Dodaj sekrety środowiskowe GITHUB_TOKEN, GITHUB_TOKEN_WORK, GITHUB_TOKEN_2 itd. Strona wykryje konta i repozytoria dostępne dla każdego tokenu. Wartości kluczy nigdy nie są wysyłane do przeglądarki.</p>
+      <p class="muted">W jednej sesji możesz sklonować maksymalnie 3 repozytoria.</p>
       <div id="credentials" aria-live="polite"><p class="muted">Sprawdzanie konfiguracji…</p></div>
     </section>
     <section>
-      <form id="clone-form">
-        <label for="repo">Repozytorium GitHub</label>
-        <div class="row">
-          <input id="repo" name="repo" placeholder="właściciel/nazwa lub https://github.com/właściciel/nazwa" required>
-          <button type="submit">Klonuj</button>
-        </div>
-      </form>
       <form id="terminal-create-form">
         <label for="terminal-repository">Repozytorium dla nowej zakładki</label>
         <div class="row">
@@ -100,7 +100,6 @@
     <script>
       const log = document.querySelector("#log");
       const credentialsElement = document.querySelector("#credentials");
-      const cloneButton = document.querySelector("#clone-form button");
       const createTerminalButton = document.querySelector("#terminal-create");
       const terminalRepository = document.querySelector("#terminal-repository");
       const terminalTabs = document.querySelector("#terminal-tabs");
@@ -110,6 +109,7 @@
       const clearTerminalButton = document.querySelector("#terminal-clear");
       const interruptTerminalButton = document.querySelector("#terminal-interrupt");
       let socket;
+      let cloneBusy = false;
       let activeTerminalId = null;
       const repositories = new Map();
       const terminalViews = new Map();
@@ -268,6 +268,13 @@
 
       function renderCredentials(credentials) {
         credentialsElement.replaceChildren();
+        if (!credentials.length) {
+          const empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "Nie skonfigurowano tokenów. Dodaj GITHUB_TOKEN lub GITHUB_TOKEN_NAZWA w ustawieniach środowiska Render.";
+          credentialsElement.append(empty);
+          return;
+        }
         for (const credential of credentials) {
           const card = document.createElement("article");
           card.className = "credential-card";
@@ -305,7 +312,65 @@
           note.className = "muted";
           note.textContent = credential.permissionMessage;
           card.append(note);
+
+          const repoDetails = document.createElement("details");
+          repoDetails.className = "credential-repos";
+          const repoSummary = document.createElement("summary");
+          repoSummary.textContent = credential.reposMessage
+            ? "Nie udało się pobrać repozytoriów"
+            : `Repozytoria dostępne dla tego tokenu (${credential.repos.length})`;
+          repoDetails.append(repoSummary);
+          if (credential.reposMessage) {
+            const repoError = document.createElement("p");
+            repoError.className = "muted";
+            repoError.textContent = credential.reposMessage;
+            repoDetails.append(repoError);
+          } else if (!credential.repos.length) {
+            const noRepos = document.createElement("p");
+            noRepos.className = "muted";
+            noRepos.textContent = "To konto nie udostępniło repozytoriów temu tokenowi.";
+            repoDetails.append(noRepos);
+          } else {
+            const repoList = document.createElement("div");
+            repoList.className = "repo-list";
+            const repositoryPermissionLabels = {
+              admin: "administracja",
+              maintain: "utrzymanie",
+              push: "zapis",
+              triage: "zarządzanie zgłoszeniami",
+              pull: "odczyt"
+            };
+            for (const repo of credential.repos) {
+              const repoRow = document.createElement("div");
+              repoRow.className = "repo-item";
+              const repoName = document.createElement("span");
+              repoName.className = "repo-name";
+              const repoPermissions = repo.permissions.length
+                ? ` · ${repo.permissions.map((permission) => repositoryPermissionLabels[permission] || permission).join(", ")}`
+                : "";
+              repoName.textContent = `${repo.fullName}${repo.private ? " · prywatne" : " · publiczne"}${repoPermissions}`;
+              const clone = document.createElement("button");
+              clone.type = "button";
+              clone.className = "repo-clone";
+              clone.textContent = "Klonuj";
+              clone.disabled = cloneBusy || credential.status !== "valid" || Boolean(credential.reposMessage);
+              clone.dataset.available = String(credential.status === "valid" && !credential.reposMessage);
+              clone.dataset.tokenId = credential.name;
+              clone.dataset.repo = repo.fullName;
+              repoRow.append(repoName, clone);
+              repoList.append(repoRow);
+            }
+            repoDetails.append(repoList);
+          }
+          card.append(repoDetails);
           credentialsElement.append(card);
+        }
+      }
+
+      function setCloneBusy(busy) {
+        cloneBusy = busy;
+        for (const button of credentialsElement.querySelectorAll(".repo-clone")) {
+          button.disabled = busy || button.dataset.available !== "true";
         }
       }
 
@@ -326,7 +391,7 @@
           if (message.type === "log") appendLog(message.text);
           if (message.type === "error") {
             appendLog(`\nBŁĄD: ${message.text}\n`);
-            cloneButton.disabled = false;
+            setCloneBusy(false);
             createTerminalButton.disabled = false;
           }
           if (message.type === "repo") addRepository(message);
@@ -362,7 +427,7 @@
             const view = terminalViews.get(message.terminalId);
             if (view) view.terminal.clear();
           }
-          if (message.type === "clone-state") cloneButton.disabled = message.busy;
+          if (message.type === "clone-state") setCloneBusy(message.busy);
         });
         socket.addEventListener("open", () => appendLog("Połączono z serwerem.\n"));
         socket.addEventListener("close", () => {
@@ -372,11 +437,14 @@
         socket.addEventListener("error", () => appendLog("\nBłąd połączenia WebSocket.\n"));
       }
 
-      document.querySelector("#clone-form").addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        cloneButton.disabled = true;
-        send({ type: "clone", repo: document.querySelector("#repo").value });
+      credentialsElement.addEventListener("click", (event) => {
+        const button = event.target.closest(".repo-clone");
+        if (!button || button.disabled || !send({
+          type: "clone",
+          tokenId: button.dataset.tokenId,
+          repo: button.dataset.repo
+        })) return;
+        setCloneBusy(true);
       });
 
       document.querySelector("#terminal-create-form").addEventListener("submit", (event) => {

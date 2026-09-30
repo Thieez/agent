@@ -67,6 +67,9 @@ test("credential status verifies environment token scopes without exposing the t
   const cookie = login.headers.get("set-cookie").split(";")[0];
   const originalFetch = global.fetch;
   global.fetch = async (url, options) => {
+    if (url !== "https://api.github.com/user") {
+      return new Response("[]", { status: 200 });
+    }
     assert.equal(url, "https://api.github.com/user");
     assert.equal(options.headers.Authorization, `Bearer ${process.env.GITHUB_TOKEN}`);
     return new Response(JSON.stringify({ login: "test-user" }), {
@@ -90,6 +93,55 @@ test("credential status verifies environment token scopes without exposing the t
     assert.equal(JSON.stringify(result).includes(process.env.GITHUB_TOKEN), false);
   } finally {
     global.fetch = originalFetch;
+  }
+});
+
+test("multiple environment tokens list their own accounts and repositories", async () => {
+  if (!server.listening) await once(server, "listening");
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(`${origin}/api/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: process.env.APP_PASSWORD })
+  });
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  process.env.GITHUB_TOKEN_WORK = "server-test-work-token";
+  const originalFetch = global.fetch;
+  global.fetch = async (url, options) => {
+    const isWorkToken = options.headers.Authorization.endsWith("-work-token");
+    if (url === "https://api.github.com/user") {
+      return new Response(JSON.stringify({ login: isWorkToken ? "work-user" : "test-user" }), {
+        status: 200,
+        headers: isWorkToken ? {} : { "x-oauth-scopes": "repo, read:org" }
+      });
+    }
+    return new Response(JSON.stringify([{
+      full_name: isWorkToken ? "work-user/work-repo" : "test-user/personal-repo",
+      private: isWorkToken,
+      permissions: { pull: true, push: isWorkToken }
+    }]), { status: 200 });
+  };
+
+  try {
+    const response = await originalFetch(`${origin}/api/credentials`, {
+      headers: { Cookie: cookie }
+    });
+    const { credentials } = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(credentials.map((credential) => credential.name), [
+      "GITHUB_TOKEN",
+      "GITHUB_TOKEN_WORK"
+    ]);
+    assert.deepEqual(credentials.map((credential) => credential.login), ["test-user", "work-user"]);
+    assert.deepEqual(credentials.map((credential) => credential.repos[0].fullName), [
+      "test-user/personal-repo",
+      "work-user/work-repo"
+    ]);
+    assert.equal(JSON.stringify(credentials).includes(process.env.GITHUB_TOKEN), false);
+    assert.equal(JSON.stringify(credentials).includes(process.env.GITHUB_TOKEN_WORK), false);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.GITHUB_TOKEN_WORK;
   }
 });
 
@@ -135,6 +187,11 @@ test("terminal WebSocket requires an available cloned repository", async () => {
     const error = await nextMessage();
     assert.equal(error.type, "error");
     assert.match(error.text, /Najpierw sklonuj i wybierz repozytorium/);
+
+    socket.send(JSON.stringify({ type: "clone", tokenId: "GITHUB_TOKEN_MISSING", repo: "owner/repo" }));
+    const cloneError = await nextMessage();
+    assert.equal(cloneError.type, "error");
+    assert.match(cloneError.text, /Nie znaleziono tokenu środowiskowego/);
   } finally {
     if (socket.readyState === WebSocket.OPEN) {
       const closed = once(socket, "close");

@@ -5,10 +5,9 @@ Prosta aplikacja webowa do klonowania repozytoriów GitHub i pracy w interaktywn
 ## Wymagane sekrety
 
 - `APP_PASSWORD` — mocne hasło do strony, co najmniej 24 znaki.
-- `GITHUB_TOKEN` — opcjonalny token konta do klonowania repozytoriów. Bez niego aplikacja działa, ale klonowanie jest niedostępne. Ogranicz go do potrzebnych repozytoriów i uprawnienia `Contents: Read-only`.
+- `GITHUB_TOKEN` — opcjonalny token konta do klonowania repozytoriów. Możesz dodać wiele kont, ustawiając kolejne sekrety, np. `GITHUB_TOKEN_WORK` i `GITHUB_TOKEN_PERSONAL`. Bez tokenu aplikacja działa, ale klonowanie jest niedostępne.
 
-Token GitHub służy wyłącznie do klonowania repozytoriów i nie jest przekazywany do procesów terminala.
-Wartość tokenu ustaw jako sekret `GITHUB_TOKEN` w konfiguracji usługi Render; aplikacja nie przyjmuje tokenów w formularzach ani nie zwraca ich do przeglądarki. Zalogowana strona pokazuje, czy token jest skonfigurowany i zaakceptowany przez GitHub, jego typ, nazwę konta oraz zakresy OAuth, jeśli GitHub je udostępnia. GitHub nie udostępnia przez API pełnej listy uprawnień tokenów fine-grained, więc dla nich strona wyraźnie zaznaczy, że szczegóły trzeba sprawdzić w ustawieniach tokenu. Aplikacja nie wyświetla innych sekretów środowiskowych.
+Tokeny GitHub ustaw jako sekrety środowiskowe usługi Render; aplikacja nie przyjmuje ich na stronie ani nie zwraca wartości do przeglądarki. Nazwy zgodne ze wzorcem `GITHUB_TOKEN` lub `GITHUB_TOKEN_NAZWA` są wykrywane automatycznie. Zalogowana strona pokazuje konto przypisane do każdego tokenu, jego zakresy OAuth (jeśli GitHub je udostępnia), dostępne repozytoria oraz uprawnienia do poszczególnych repozytoriów. Każde widoczne repozytorium można sklonować przy użyciu powiązanego z nim tokenu. GitHub nie udostępnia przez API pełnej listy uprawnień fine-grained tokenu — dostępne repozytoria i uprawnienia do nich są natomiast weryfikowane przez API. Tokeny nie są przekazywane do procesów terminala.
 
 ## Terminale
 
@@ -20,7 +19,7 @@ Utwórz Web Service z tego repozytorium albo użyj dołączonego `render.yaml`. 
 
 ## Uruchomienie lokalne
 
-Wymagany Node.js 22 lub nowszy, Git oraz narzędzia do budowania natywnych modułów `node-pty`. Ustaw `APP_PASSWORD` i `GITHUB_TOKEN`, a następnie uruchom:
+Wymagany Node.js 22 lub nowszy, Git oraz narzędzia do budowania natywnych modułów `node-pty`. Ustaw `APP_PASSWORD` i opcjonalnie jeden lub więcej tokenów `GITHUB_TOKEN` / `GITHUB_TOKEN_NAZWA`, a następnie uruchom:
 
 ```sh
 npm ci

@@ -10,7 +10,6 @@ const { parseRepository } = require("./repository");
 
 const PORT = Number(process.env.PORT || 3000);
 const APP_PASSWORD = process.env.APP_PASSWORD;
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_REPOSITORIES_PER_SESSION = 3;
 const MAX_TERMINALS_PER_SESSION = 10;
@@ -120,6 +119,74 @@ function githubTokenType(token) {
   return "Inny token GitHub";
 }
 
+function githubTokens() {
+  return Object.entries(process.env)
+    .filter(([name, value]) =>
+      /^GITHUB_TOKEN(?:_[A-Z0-9_]+)?$/i.test(name) &&
+      typeof value === "string" &&
+      value.trim()
+    )
+    .sort(([left], [right]) => {
+      if (left.toUpperCase() === "GITHUB_TOKEN") return -1;
+      if (right.toUpperCase() === "GITHUB_TOKEN") return 1;
+      return left.localeCompare(right);
+    })
+    .map(([name, value]) => ({ name, value: value.trim() }));
+}
+
+function githubApiHeaders(token) {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
+
+async function fetchGithubRepositories(token) {
+  const repos = [];
+  const baseUrl = "https://api.github.com/user/repos?affiliation=owner%2Ccollaborator%2Corganization_member&visibility=all&per_page=100&sort=full_name";
+  let url = baseUrl;
+
+  while (url) {
+    const response = await fetch(url, {
+      headers: githubApiHeaders(token),
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) {
+      return {
+        repos,
+        error: `GitHub nie udostępnił listy repozytoriów (HTTP ${response.status}).`
+      };
+    }
+    const page = await response.json();
+    if (!Array.isArray(page)) {
+      return { repos, error: "GitHub zwrócił nieprawidłową listę repozytoriów." };
+    }
+    for (const repo of page) {
+      if (typeof repo.full_name !== "string") continue;
+      repos.push({
+        fullName: repo.full_name,
+        private: Boolean(repo.private),
+        permissions: repo.permissions && typeof repo.permissions === "object"
+          ? Object.entries(repo.permissions)
+            .filter(([, allowed]) => allowed === true)
+            .map(([permission]) => permission)
+          : []
+      });
+    }
+    const nextLink = (response.headers.get("link") || "")
+      .split(",")
+      .find((link) => /rel="next"/.test(link));
+    const nextUrl = nextLink && nextLink.match(/<([^>]+)>/);
+    url = nextUrl ? nextUrl[1] : null;
+    if (url && new URL(url).origin !== "https://api.github.com") {
+      return { repos, error: "GitHub zwrócił nieprawidłowy link paginacji." };
+    }
+  }
+
+  return { repos, error: null };
+}
+
 function appendTerminalOutput(terminal, text) {
   terminal.output += text;
   if (terminal.output.length > MAX_TERMINAL_OUTPUT_LENGTH) {
@@ -182,10 +249,12 @@ function runCommand(command, args, options, timeoutMs, onOutput) {
 function childEnvironment() {
   const env = { ...process.env };
   delete env.APP_PASSWORD;
-  delete env.GITHUB_TOKEN;
   delete env.GH_TOKEN;
   delete env.COPILOT_GITHUB_TOKEN;
   delete env.COPILOT_HOME;
+  for (const name of Object.keys(env)) {
+    if (/^GITHUB_TOKEN(?:_[A-Z0-9_]+)?$/i.test(name)) delete env[name];
+  }
   return env;
 }
 
@@ -246,93 +315,91 @@ app.get("/api/session", (req, res) => {
 
 app.get("/api/credentials", async (req, res) => {
   if (!getSession(req)) return sendJson(res, 401, { error: "Zaloguj się ponownie." });
-  if (!GITHUB_TOKEN) {
+  const tokens = githubTokens();
+  if (!tokens.length) {
     return sendJson(res, 200, {
-      credentials: [{
-        name: "GITHUB_TOKEN",
-        purpose: "Klonowanie repozytoriów GitHub",
-        status: "not_configured",
-        permissions: [],
-        permissionMessage: "Dodaj token jako zmienną środowiskową usługi Render."
-      }]
+      credentials: [],
+      message: "Dodaj GITHUB_TOKEN lub GITHUB_TOKEN_NAZWA jako sekrety środowiskowe usługi Render."
     });
   }
 
-  try {
-    const response = await fetch("https://api.github.com/user", {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
-        "X-GitHub-Api-Version": "2022-11-28"
-      },
-      signal: AbortSignal.timeout(5000)
-    });
-    const scopes = (response.headers.get("x-oauth-scopes") || "")
-      .split(",")
-      .map((scope) => scope.trim())
-      .filter(Boolean);
-    let login = null;
-    if (response.ok) {
-      const user = await response.json();
-      login = typeof user.login === "string" ? user.login : null;
-    }
-    const status = response.ok ? "valid" : response.status === 401 ? "invalid" : "unavailable";
-    const scopeDescriptions = {
-      "admin:org": "Może zarządzać organizacjami i ich zespołami.",
-      "admin:org_hook": "Może zarządzać webhookami organizacji.",
-      "admin:public_key": "Może zarządzać publicznymi kluczami SSH użytkownika.",
-      "admin:repo_hook": "Może zarządzać webhookami repozytoriów.",
-      delete_repo: "Może usuwać repozytoria.",
-      gist: "Może tworzyć i zarządzać gistami.",
-      notifications: "Może zarządzać powiadomieniami.",
-      public_repo: "Odczyt i zapis publicznych repozytoriów.",
-      "read:org": "Może odczytywać członkostwo, zespoły i dane organizacji.",
-      "read:public_key": "Może odczytywać publiczne klucze SSH użytkownika.",
-      "read:user": "Może odczytywać profil użytkownika.",
-      repo: "Pełny dostęp do repozytoriów, w tym prywatnych.",
-      "repo:invite": "Może zapraszać współpracowników do repozytoriów.",
-      "repo:status": "Może odczytywać i zapisywać statusy commitów.",
-      "user:email": "Może odczytywać adresy e-mail użytkownika.",
-      "user:follow": "Może obserwować i przestawać obserwować użytkowników.",
-      workflow: "Może zarządzać plikami workflow GitHub Actions.",
-      "write:org": "Może zarządzać członkostwem i zespołami organizacji.",
-      "write:public_key": "Może dodawać i usuwać publiczne klucze SSH użytkownika."
-    };
-    const permissions = response.ok
-      ? scopes.map((scope) => ({
-          name: scope,
-          description: scopeDescriptions[scope] || "Zakres OAuth przyznany temu tokenowi."
-        }))
-      : [];
+  const scopeDescriptions = {
+    "admin:org": "Może zarządzać organizacjami i ich zespołami.",
+    "admin:org_hook": "Może zarządzać webhookami organizacji.",
+    "admin:public_key": "Może zarządzać publicznymi kluczami SSH użytkownika.",
+    "admin:repo_hook": "Może zarządzać webhookami repozytoriów.",
+    delete_repo: "Może usuwać repozytoria.",
+    gist: "Może tworzyć i zarządzać gistami.",
+    notifications: "Może zarządzać powiadomieniami.",
+    public_repo: "Odczyt i zapis publicznych repozytoriów.",
+    "read:org": "Może odczytywać członkostwo, zespoły i dane organizacji.",
+    "read:public_key": "Może odczytywać publiczne klucze SSH użytkownika.",
+    "read:user": "Może odczytywać profil użytkownika.",
+    repo: "Pełny dostęp do repozytoriów, w tym prywatnych.",
+    "repo:invite": "Może zapraszać współpracowników do repozytoriów.",
+    "repo:status": "Może odczytywać i zapisywać statusy commitów.",
+    "user:email": "Może odczytywać adresy e-mail użytkownika.",
+    "user:follow": "Może obserwować i przestawać obserwować użytkowników.",
+    workflow: "Może zarządzać plikami workflow GitHub Actions.",
+    "write:org": "Może zarządzać członkostwem i zespołami organizacji.",
+    "write:public_key": "Może dodawać i usuwać publiczne klucze SSH użytkownika."
+  };
+  const credentials = await Promise.all(tokens.map(async ({ name, value }) => {
+    try {
+      const response = await fetch("https://api.github.com/user", {
+        headers: githubApiHeaders(value),
+        signal: AbortSignal.timeout(10000)
+      });
+      const scopes = (response.headers.get("x-oauth-scopes") || "")
+        .split(",")
+        .map((scope) => scope.trim())
+        .filter(Boolean);
+      const status = response.ok ? "valid" : response.status === 401 ? "invalid" : "unavailable";
+      let login = null;
+      let repoList = {
+        repos: [],
+        error: response.ok ? null : "Repozytoria wymagają poprawnego tokenu GitHub."
+      };
+      if (response.ok) {
+        const user = await response.json();
+        login = typeof user.login === "string" ? user.login : null;
+        repoList = await fetchGithubRepositories(value);
+      }
 
-    return sendJson(res, 200, {
-      credentials: [{
-        name: "GITHUB_TOKEN",
+      return {
+        name,
         purpose: "Klonowanie repozytoriów GitHub",
         status,
         login,
-        tokenType: githubTokenType(GITHUB_TOKEN),
-        permissions,
+        tokenType: githubTokenType(value),
+        permissions: scopes.map((scope) => ({
+          name: scope,
+          description: scopeDescriptions[scope] || "Zakres OAuth przyznany temu tokenowi."
+        })),
         permissionMessage: !response.ok
           ? `GitHub nie potwierdził tokenu (HTTP ${response.status}).`
           : scopes.length
             ? "Zakresy OAuth zwrócone przez GitHub."
-            : "GitHub nie udostępnia zakresów OAuth dla tego typu tokenu. Szczegółowe uprawnienia sprawdź w ustawieniach tokenu."
-      }]
-    });
-  } catch (error) {
-    console.error(`Failed to verify GitHub token: ${error.message}`);
-    return sendJson(res, 200, {
-      credentials: [{
-        name: "GITHUB_TOKEN",
+            : "GitHub nie udostępnia zakresów OAuth dla tego typu tokenu. Szczegółowe uprawnienia sprawdź w ustawieniach tokenu.",
+        repos: repoList.repos,
+        reposMessage: repoList.error
+      };
+    } catch (error) {
+      console.error(`Failed to verify GitHub token ${name}: ${error.message}`);
+      return {
+        name,
         purpose: "Klonowanie repozytoriów GitHub",
         status: "unavailable",
-        tokenType: githubTokenType(GITHUB_TOKEN),
+        tokenType: githubTokenType(value),
         permissions: [],
-        permissionMessage: "Nie udało się teraz połączyć z GitHub, aby zweryfikować token i jego zakresy."
-      }]
-    });
-  }
+        permissionMessage: "Nie udało się teraz połączyć z GitHub, aby zweryfikować token i jego zakresy.",
+        repos: [],
+        reposMessage: "Nie udało się pobrać repozytoriów z GitHub."
+      };
+    }
+  }));
+
+  return sendJson(res, 200, { credentials });
 });
 
 const server = app.listen(PORT, "0.0.0.0", () => {
@@ -504,8 +571,10 @@ webSockets.on("connection", (socket) => {
       if (!name) {
         return safeSend(socket, { type: "error", text: "Podaj repozytorium GitHub w formacie owner/repo." });
       }
-      if (!GITHUB_TOKEN) {
-        return safeSend(socket, { type: "error", text: "Dodaj GITHUB_TOKEN w konfiguracji środowiska, aby klonować repozytoria." });
+      const tokenId = typeof message.tokenId === "string" ? message.tokenId : "";
+      const token = githubTokens().find(({ name: envName }) => envName === tokenId);
+      if (!token) {
+        return safeSend(socket, { type: "error", text: "Nie znaleziono tokenu środowiskowego dla tego repozytorium." });
       }
       if (cloneRunning) {
         return safeSend(socket, { type: "error", text: "Inne repozytorium jest już klonowane." });
@@ -516,12 +585,29 @@ webSockets.on("connection", (socket) => {
 
       cloneRunning = true;
       broadcast({ type: "clone-state", busy: true });
-      safeSend(socket, { type: "log", text: `Klonowanie ${name}...\n` });
+      safeSend(socket, { type: "log", text: `Sprawdzanie dostępu tokenu ${token.name} do ${name}...\n` });
       let workspace;
       try {
+        const [owner, repoName] = name.split("/");
+        const accessResponse = await fetch(
+          `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}`,
+          {
+            headers: githubApiHeaders(token.value),
+            signal: AbortSignal.timeout(10000)
+          }
+        );
+        if (!accessResponse.ok) {
+          throw new Error(`Token ${token.name} nie ma dostępu do ${name} (HTTP ${accessResponse.status}).`);
+        }
+        const repo = await accessResponse.json();
+        if (typeof repo.full_name !== "string") {
+          throw new Error("GitHub nie zwrócił prawidłowej nazwy repozytorium.");
+        }
+        const cloneName = repo.full_name;
+        safeSend(socket, { type: "log", text: `Klonowanie ${cloneName}...\n` });
         workspace = await mkdtemp(path.join(os.tmpdir(), "copilot-repo-"));
         const id = crypto.randomUUID();
-        const auth = Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString("base64");
+        const auth = Buffer.from(`x-access-token:${token.value}`).toString("base64");
         const env = childEnvironment();
         env.GIT_TERMINAL_PROMPT = "0";
         env.GIT_CONFIG_COUNT = "1";
@@ -529,14 +615,14 @@ webSockets.on("connection", (socket) => {
         env.GIT_CONFIG_VALUE_0 = `AUTHORIZATION: basic ${auth}`;
         await runCommand(
           "git",
-          ["clone", "--progress", "--", `https://github.com/${name}.git`, workspace],
+          ["clone", "--progress", "--", `https://github.com/${cloneName}.git`, workspace],
           { cwd: os.tmpdir(), env },
           10 * 60 * 1000,
           (text) => safeSend(socket, { type: "log", text })
         );
-        sessionRepos.set(id, { name, path: workspace });
-        safeSend(socket, { type: "repo", id, name });
-        safeSend(socket, { type: "log", text: `Gotowe: ${name}\n` });
+        sessionRepos.set(id, { name: cloneName, path: workspace });
+        safeSend(socket, { type: "repo", id, name: cloneName });
+        safeSend(socket, { type: "log", text: `Gotowe: ${cloneName}\n` });
       } catch (error) {
         if (workspace) {
           try {
