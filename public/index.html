@@ -3,58 +3,49 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Copilot Repo</title>
+    <title>Repo Terminal</title>
+    <link rel="stylesheet" href="/vendor/xterm.css">
     <style>
       :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
-      body { max-width: 960px; margin: 36px auto; padding: 0 18px; }
+      body { max-width: 1100px; margin: 36px auto; padding: 0 18px; }
       header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
       h1 { font-size: 1.5rem; }
       section { margin: 20px 0; padding: 20px; border: 1px solid #30363d; border-radius: 10px; background: #161b22; }
       label { display: block; margin-bottom: 8px; font-weight: 600; }
-      input, select, textarea, button { box-sizing: border-box; padding: 10px 12px; border: 1px solid #30363d; border-radius: 7px; font: inherit; }
-      input, select, textarea { width: 100%; margin-bottom: 12px; background: #0d1117; color: inherit; }
-      textarea { min-height: 110px; resize: vertical; }
+      input, select, button { box-sizing: border-box; padding: 10px 12px; border: 1px solid #30363d; border-radius: 7px; font: inherit; }
+      input, select { width: 100%; margin-bottom: 12px; background: #0d1117; color: inherit; }
       button { background: #238636; color: white; cursor: pointer; font-weight: 600; }
       button.secondary { background: #21262d; border-color: #484f58; }
       button:disabled { opacity: .55; cursor: wait; }
       pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; padding: 14px; border: 1px solid #30363d; border-radius: 7px; background: #010409; color: #c9d1d9; font: 13px ui-monospace, monospace; }
-      #log { min-height: 90px; max-height: 25vh; }
-      .chat-output { min-height: 160px; max-height: 40vh; }
-      .token-item, .chat-card { margin-top: 12px; padding: 14px; border: 1px solid #30363d; border-radius: 7px; background: #0d1117; }
-      .token-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-      .token-actions { display: flex; gap: 8px; }
-      .chat-card h3 { margin: 0; font-size: 1rem; }
-      .chat-card textarea { margin-top: 14px; }
-      .token-meta { display: grid; gap: 4px; overflow-wrap: anywhere; }
-      .empty { padding: 12px 0; }
-      .row { display: flex; gap: 10px; }
+      #log { min-height: 70px; max-height: 20vh; }
+      .row { display: flex; gap: 10px; align-items: end; }
       .row > * { flex: 1; }
       .muted { color: #8b949e; font-size: .9rem; }
-      @media (max-width: 600px) { .row { flex-direction: column; } }
+      .terminal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+      .terminal-actions { display: flex; gap: 8px; }
+      .terminal-tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid #30363d; }
+      .terminal-tab { display: flex; flex: 0 0 auto; align-items: center; }
+      .terminal-tab button { border-radius: 7px 7px 0 0; background: #21262d; }
+      .terminal-tab button[aria-selected="true"] { background: #0d1117; border-bottom-color: #0d1117; }
+      .terminal-tab .close-tab { border-radius: 0 7px 0 0; padding-left: 9px; padding-right: 9px; color: #8b949e; }
+      .terminal-panel { height: 52vh; min-height: 280px; padding: 12px; background: #010409; border: 1px solid #30363d; border-top: 0; }
+      .terminal-panel[hidden] { display: none; }
+      .terminal-host { width: 100%; height: 100%; }
+      .empty { padding: 28px 8px; text-align: center; }
+      @media (max-width: 600px) {
+        body { margin-top: 20px; }
+        .row { align-items: stretch; flex-direction: column; }
+        .terminal-toolbar { align-items: flex-start; flex-direction: column; }
+      }
     </style>
   </head>
   <body>
     <header>
-      <h1>Copilot Repo</h1>
+      <h1>Repo Terminal</h1>
       <button id="logout" class="secondary" type="button">Wyloguj</button>
     </header>
-    <p class="muted">Repozytoria są klonowane do tymczasowego katalogu Rendera. Używaj tylko zaufanych repozytoriów.</p>
-    <section>
-      <h2>Tokeny Copilot</h2>
-      <form id="token-form">
-        <input id="token-id" name="tokenId" type="hidden">
-        <label for="token-label">Nazwa tokenu</label>
-        <input id="token-label" name="label" maxlength="40" placeholder="Np. konto osobiste" required>
-        <label for="token-value">Token</label>
-        <input id="token-value" name="token" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="github_pat_… lub gho_…" maxlength="4096" required>
-        <div class="row">
-          <button id="token-submit" type="submit">Dodaj token</button>
-          <button id="token-cancel" class="secondary" type="button" hidden>Anuluj edycję</button>
-        </div>
-      </form>
-      <p class="muted">Fine-grained PAT musi mieć uprawnienie konta „Copilot Requests”. <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Utwórz token w ustawieniach GitHub</a>. Tokeny nie są wyświetlane ponownie. Zmiany są przechowywane do restartu instancji.</p>
-      <div id="token-list" aria-live="polite"></div>
-    </section>
+    <p class="muted">Każda zakładka uruchamia osobny terminal w wybranym repozytorium. Sesje terminali działają do zamknięcia zakładki lub wygaśnięcia sesji. Używaj tylko zaufanych repozytoriów.</p>
     <section>
       <form id="clone-form">
         <label for="repo">Repozytorium GitHub</label>
@@ -63,48 +54,64 @@
           <button type="submit">Klonuj</button>
         </div>
       </form>
-      <form id="chat-create-form">
-        <label for="chat-repository">Repozytorium dla nowego chatu</label>
-        <select id="chat-repository" required>
-          <option value="">Najpierw sklonuj repozytorium</option>
-        </select>
-        <label for="chat-token">Token dla nowego chatu</label>
-        <select id="chat-token" required>
-          <option value="">Najpierw dodaj token</option>
-        </select>
-        <button type="submit">Utwórz chat</button>
+      <form id="terminal-create-form">
+        <label for="terminal-repository">Repozytorium dla nowej zakładki</label>
+        <div class="row">
+          <select id="terminal-repository" required>
+            <option value="">Najpierw sklonuj repozytorium</option>
+          </select>
+          <button id="terminal-create" type="submit">Nowy terminal</button>
+        </div>
       </form>
     </section>
     <section>
-      <h2>Chaty Copilot</h2>
-      <p class="muted">Każdy chat ma osobny kontekst i token. Można uruchamiać zadania równolegle w różnych repozytoriach; jednocześnie działa maksymalnie 4 zadania.</p>
-      <div id="chats"></div>
+      <div class="terminal-toolbar">
+        <div>
+          <h2>Terminale</h2>
+          <span id="terminal-status" class="muted">Połączono z serwerem.</span>
+        </div>
+        <div class="terminal-actions">
+          <button id="terminal-clear" class="secondary" type="button" disabled>Wyczyść ekran</button>
+          <button id="terminal-interrupt" class="secondary" type="button" disabled>Przerwij (Ctrl+C)</button>
+        </div>
+      </div>
+      <div id="terminal-tabs" class="terminal-tabs" role="tablist" aria-label="Zakładki terminali"></div>
+      <div id="terminal-panels"></div>
+      <p id="terminal-empty" class="muted empty">Sklonuj repozytorium i utwórz terminal, aby rozpocząć.</p>
     </section>
     <section>
-      <label>Log klonowania</label>
+      <label for="log">Log klonowania</label>
       <pre id="log" aria-live="polite"></pre>
     </section>
+    <script src="/vendor/xterm.js"></script>
+    <script src="/vendor/addon-fit.js"></script>
     <script>
       const log = document.querySelector("#log");
-      const cloneButton = document.querySelector('#clone-form button');
-      const tokenForm = document.querySelector("#token-form");
-      const tokenIdInput = document.querySelector("#token-id");
-      const tokenLabelInput = document.querySelector("#token-label");
-      const tokenValueInput = document.querySelector("#token-value");
-      const tokenSubmit = document.querySelector("#token-submit");
-      const tokenCancel = document.querySelector("#token-cancel");
-      const tokenList = document.querySelector("#token-list");
-      const chatRepository = document.querySelector("#chat-repository");
-      const chatToken = document.querySelector("#chat-token");
-      const chatsElement = document.querySelector("#chats");
+      const cloneButton = document.querySelector("#clone-form button");
+      const createTerminalButton = document.querySelector("#terminal-create");
+      const terminalRepository = document.querySelector("#terminal-repository");
+      const terminalTabs = document.querySelector("#terminal-tabs");
+      const terminalPanels = document.querySelector("#terminal-panels");
+      const terminalEmpty = document.querySelector("#terminal-empty");
+      const terminalStatus = document.querySelector("#terminal-status");
+      const clearTerminalButton = document.querySelector("#terminal-clear");
+      const interruptTerminalButton = document.querySelector("#terminal-interrupt");
       let socket;
-      const tokens = new Map();
+      let activeTerminalId = null;
       const repositories = new Map();
-      const chatViews = new Map();
+      const terminalViews = new Map();
 
       function appendLog(text) {
         log.textContent += text;
         log.scrollTop = log.scrollHeight;
+      }
+
+      function send(message) {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify(message));
+          return true;
+        }
+        return false;
       }
 
       function makeOption(value, text) {
@@ -114,144 +121,136 @@
         return option;
       }
 
-      function updateSelectors() {
-        const previousRepo = chatRepository.value;
-        const previousToken = chatToken.value;
-        chatRepository.replaceChildren(makeOption("", repositories.size ? "Wybierz repozytorium" : "Najpierw sklonuj repozytorium"));
-        for (const [id, repo] of repositories) chatRepository.append(makeOption(id, repo.name));
-        chatToken.replaceChildren(makeOption("", tokens.size ? "Wybierz token" : "Najpierw dodaj token"));
-        for (const [id, token] of tokens) chatToken.append(makeOption(id, `${token.label} (${token.masked})`));
-        if (repositories.has(previousRepo)) chatRepository.value = previousRepo;
-        if (tokens.has(previousToken)) chatToken.value = previousToken;
-      }
-
-      function resetTokenForm() {
-        tokenForm.reset();
-        tokenIdInput.value = "";
-        tokenValueInput.required = true;
-        tokenValueInput.placeholder = "github_pat_… lub gho_…";
-        tokenSubmit.textContent = "Dodaj token";
-        tokenSubmit.disabled = false;
-        tokenCancel.hidden = true;
-      }
-
-      function renderTokens() {
-        tokenList.replaceChildren();
-        if (!tokens.size) {
-          const empty = document.createElement("p");
-          empty.className = "muted empty";
-          empty.textContent = "Nie dodano jeszcze tokenów.";
-          tokenList.append(empty);
+      function updateRepositorySelector() {
+        const previousRepo = terminalRepository.value;
+        terminalRepository.replaceChildren(makeOption("", repositories.size
+          ? "Wybierz repozytorium"
+          : "Najpierw sklonuj repozytorium"));
+        for (const [id, repo] of repositories) {
+          terminalRepository.append(makeOption(id, repo.name));
         }
-        for (const [id, token] of tokens) {
-          const row = document.createElement("div");
-          row.className = "token-item";
-          const meta = document.createElement("div");
-          meta.className = "token-meta";
-          const name = document.createElement("strong");
-          name.textContent = token.label;
-          const masked = document.createElement("span");
-          masked.className = "muted";
-          masked.textContent = token.masked;
-          meta.append(name, masked);
-          const actions = document.createElement("div");
-          actions.className = "token-actions";
-          const edit = document.createElement("button");
-          edit.type = "button";
-          edit.className = "secondary";
-          edit.textContent = "Edytuj";
-          edit.addEventListener("click", () => {
-            tokenIdInput.value = id;
-            tokenLabelInput.value = token.label;
-            tokenValueInput.value = "";
-            tokenValueInput.required = false;
-            tokenValueInput.placeholder = "Zostaw puste, aby zachować obecny token";
-            tokenSubmit.textContent = "Zapisz zmiany";
-            tokenCancel.hidden = false;
-            tokenLabelInput.focus();
-          });
-          const remove = document.createElement("button");
-          remove.type = "button";
-          remove.className = "secondary";
-          remove.textContent = "Usuń";
-          remove.addEventListener("click", () => {
-            if (confirm(`Usunąć token „${token.label}” i przypisane do niego chaty?`)) {
-              socket.send(JSON.stringify({ type: "token-delete", tokenId: id }));
-            }
-          });
-          actions.append(edit, remove);
-          row.append(meta, actions);
-          tokenList.append(row);
-        }
-        updateSelectors();
+        if (repositories.has(previousRepo)) terminalRepository.value = previousRepo;
       }
 
-      function createChatView(chat) {
-        const card = document.createElement("article");
-        card.className = "chat-card";
-        const header = document.createElement("div");
-        header.className = "row";
-        const heading = document.createElement("h3");
-        const status = document.createElement("span");
-        status.className = "muted";
-        const close = document.createElement("button");
-        close.type = "button";
-        close.className = "secondary";
-        close.textContent = "Zamknij chat";
-        close.addEventListener("click", () => {
-          if (!chatViews.get(chat.id)?.chat.busy) {
-            socket.send(JSON.stringify({ type: "chat-delete", chatId: chat.id }));
-          }
+      function fitTerminal(view) {
+        if (!view || view.id !== activeTerminalId || view.exited) return;
+        view.fit.fit();
+        send({
+          type: "terminal-resize",
+          terminalId: view.id,
+          cols: view.terminal.cols,
+          rows: view.terminal.rows
         });
-        header.append(heading, status, close);
-        const output = document.createElement("pre");
-        output.className = "chat-output";
-        output.setAttribute("aria-live", "polite");
-        const form = document.createElement("form");
-        const prompt = document.createElement("textarea");
-        prompt.maxLength = 8000;
-        prompt.required = true;
-        prompt.placeholder = "Wpisz polecenie dla tego chatu...";
-        const submit = document.createElement("button");
-        submit.type = "submit";
-        submit.textContent = "Uruchom w tym chacie";
-        form.append(prompt, submit);
-        form.addEventListener("submit", (event) => {
-          event.preventDefault();
-          if (!prompt.value.trim() || !socket || socket.readyState !== WebSocket.OPEN) return;
-          submit.disabled = true;
-          socket.send(JSON.stringify({ type: "chat-prompt", chatId: chat.id, prompt: prompt.value }));
-          prompt.value = "";
+      }
+
+      function renderTerminalTabs() {
+        terminalTabs.replaceChildren();
+        for (const view of terminalViews.values()) {
+          const tab = document.createElement("div");
+          tab.className = "terminal-tab";
+          const select = document.createElement("button");
+          select.type = "button";
+          select.id = `terminal-tab-${view.id}`;
+          select.setAttribute("role", "tab");
+          select.setAttribute("aria-controls", `terminal-panel-${view.id}`);
+          select.setAttribute("aria-selected", String(view.id === activeTerminalId));
+          select.textContent = view.repoName;
+          select.addEventListener("click", () => activateTerminal(view.id));
+          const close = document.createElement("button");
+          close.type = "button";
+          close.className = "close-tab";
+          close.textContent = "×";
+          close.setAttribute("aria-label", `Zamknij terminal ${view.repoName}`);
+          close.addEventListener("click", () => send({ type: "terminal-close", terminalId: view.id }));
+          tab.append(select, close);
+          terminalTabs.append(tab);
+          view.panel.hidden = view.id !== activeTerminalId;
+        }
+        const activeView = terminalViews.get(activeTerminalId);
+        terminalEmpty.hidden = terminalViews.size > 0;
+        clearTerminalButton.disabled = !activeView || activeView.exited;
+        interruptTerminalButton.disabled = !activeView || activeView.exited;
+        terminalStatus.textContent = activeView
+          ? (activeView.exited ? "Proces terminala zakończony." : `Połączono · ${activeView.repoName}`)
+          : "Brak otwartych terminali.";
+      }
+
+      function activateTerminal(terminalId) {
+        if (!terminalViews.has(terminalId)) return;
+        activeTerminalId = terminalId;
+        renderTerminalTabs();
+        const view = terminalViews.get(terminalId);
+        requestAnimationFrame(() => {
+          fitTerminal(view);
+          view.terminal.focus();
         });
-        card.append(header, output, form);
-        chatsElement.prepend(card);
-        const view = { card, heading, status, output, submit, chat };
-        chatViews.set(chat.id, view);
-        updateChatView(chat);
+      }
+
+      function createTerminalView(terminal) {
+        const panel = document.createElement("div");
+        panel.className = "terminal-panel";
+        panel.id = `terminal-panel-${terminal.id}`;
+        panel.setAttribute("role", "tabpanel");
+        panel.setAttribute("aria-labelledby", `terminal-tab-${terminal.id}`);
+        const host = document.createElement("div");
+        host.className = "terminal-host";
+        panel.append(host);
+        terminalPanels.append(panel);
+
+        const instance = new Terminal({
+          cursorBlink: true,
+          scrollback: 5000,
+          fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+          fontSize: 13,
+          theme: { background: "#010409", foreground: "#c9d1d9" }
+        });
+        const fit = new FitAddon.FitAddon();
+        instance.loadAddon(fit);
+        instance.open(host);
+        const view = {
+          id: terminal.id,
+          repoName: terminal.repoName,
+          exited: terminal.exited,
+          panel,
+          terminal: instance,
+          fit
+        };
+        instance.onData((data) => {
+          if (!view.exited) send({ type: "terminal-input", terminalId: view.id, data });
+        });
+        new ResizeObserver(() => fitTerminal(view)).observe(host);
+        if (terminal.output) instance.write(terminal.output);
+        if (terminal.exited) instance.write("\r\n[Proces terminala zakończony]\r\n");
+        terminalViews.set(view.id, view);
+        if (!activeTerminalId) activeTerminalId = view.id;
+        renderTerminalTabs();
         return view;
       }
 
-      function updateChatView(chat) {
-        let view = chatViews.get(chat.id);
-        if (!view) view = createChatView(chat);
-        view.chat = chat;
-        view.heading.textContent = `${chat.repoName} · ${chat.tokenLabel}`;
-        view.status.textContent = chat.busy ? "Copilot pracuje…" : "Gotowy";
-        view.output.textContent = chat.output;
-        view.output.scrollTop = view.output.scrollHeight;
-        view.submit.disabled = chat.busy;
+      function updateTerminal(terminal) {
+        const view = terminalViews.get(terminal.id) || createTerminalView(terminal);
+        view.repoName = terminal.repoName;
+        view.exited = terminal.exited;
+        renderTerminalTabs();
       }
 
-      function removeChat(chatId) {
-        const view = chatViews.get(chatId);
+      function removeTerminal(terminalId) {
+        const view = terminalViews.get(terminalId);
         if (!view) return;
-        view.card.remove();
-        chatViews.delete(chatId);
+        view.terminal.dispose();
+        view.panel.remove();
+        terminalViews.delete(terminalId);
+        if (activeTerminalId === terminalId) {
+          activeTerminalId = terminalViews.keys().next().value || null;
+        }
+        renderTerminalTabs();
+        const activeView = terminalViews.get(activeTerminalId);
+        if (activeView) requestAnimationFrame(() => fitTerminal(activeView));
       }
 
       function addRepository(repo) {
         repositories.set(repo.id, repo);
-        updateSelectors();
+        updateRepositorySelector();
       }
 
       async function connect() {
@@ -264,42 +263,49 @@
           if (message.type === "log") appendLog(message.text);
           if (message.type === "error") {
             appendLog(`\nBŁĄD: ${message.text}\n`);
-            tokenSubmit.disabled = false;
             cloneButton.disabled = false;
-            for (const view of chatViews.values()) view.submit.disabled = view.chat.busy;
+            createTerminalButton.disabled = false;
           }
           if (message.type === "repo") addRepository(message);
           if (message.type === "ready") {
             repositories.clear();
             for (const repo of message.repos) repositories.set(repo.id, repo);
-            tokens.clear();
-            for (const token of message.tokens) tokens.set(token.id, token);
-            renderTokens();
-            for (const chat of message.chats) updateChatView(chat);
-          }
-          if (message.type === "tokens") {
-            tokens.clear();
-            for (const token of message.tokens) tokens.set(token.id, token);
-            renderTokens();
-          }
-          if (message.type === "token-saved") {
-            resetTokenForm();
-            appendLog("Token Copilot został zapisany.\n");
-          }
-          if (message.type === "chat-created") updateChatView(message.chat);
-          if (message.type === "chat-state") updateChatView(message.chat);
-          if (message.type === "chat-log") {
-            const view = chatViews.get(message.chatId);
-            if (view) {
-              view.output.textContent += message.text;
-              view.output.scrollTop = view.output.scrollHeight;
+            updateRepositorySelector();
+            for (const terminal of message.terminals) updateTerminal(terminal);
+            if (!activeTerminalId && terminalViews.size) {
+              activeTerminalId = terminalViews.keys().next().value;
+              renderTerminalTabs();
             }
           }
-          if (message.type === "chat-deleted") removeChat(message.chatId);
+          if (message.type === "terminal-created") {
+            createTerminalButton.disabled = false;
+            updateTerminal(message.terminal);
+            activateTerminal(message.terminal.id);
+          }
+          if (message.type === "terminal-output") {
+            const view = terminalViews.get(message.terminalId);
+            if (view) view.terminal.write(message.text);
+          }
+          if (message.type === "terminal-exit") {
+            const view = terminalViews.get(message.terminalId);
+            if (view) {
+              view.exited = true;
+              view.terminal.write("\r\n[Proces terminala zakończony]\r\n");
+              renderTerminalTabs();
+            }
+          }
+          if (message.type === "terminal-closed") removeTerminal(message.terminalId);
+          if (message.type === "terminal-cleared") {
+            const view = terminalViews.get(message.terminalId);
+            if (view) view.terminal.clear();
+          }
           if (message.type === "clone-state") cloneButton.disabled = message.busy;
         });
         socket.addEventListener("open", () => appendLog("Połączono z serwerem.\n"));
-        socket.addEventListener("close", () => appendLog("\nPołączenie WebSocket zostało zamknięte.\n"));
+        socket.addEventListener("close", () => {
+          terminalStatus.textContent = "Połączenie z serwerem zostało zamknięte.";
+          appendLog("\nPołączenie WebSocket zostało zamknięte.\n");
+        });
         socket.addEventListener("error", () => appendLog("\nBłąd połączenia WebSocket.\n"));
       }
 
@@ -307,31 +313,26 @@
         event.preventDefault();
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
         cloneButton.disabled = true;
-        socket.send(JSON.stringify({ type: "clone", repo: document.querySelector("#repo").value }));
+        send({ type: "clone", repo: document.querySelector("#repo").value });
       });
 
-      tokenForm.addEventListener("submit", (event) => {
+      document.querySelector("#terminal-create-form").addEventListener("submit", (event) => {
         event.preventDefault();
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        tokenSubmit.disabled = true;
-        socket.send(JSON.stringify({
-          type: "token-save",
-          tokenId: tokenIdInput.value || null,
-          label: tokenLabelInput.value,
-          token: tokenValueInput.value
-        }));
+        if (!terminalRepository.value || !send({
+          type: "terminal-create",
+          repoId: terminalRepository.value
+        })) return;
+        createTerminalButton.disabled = true;
       });
 
-      tokenCancel.addEventListener("click", resetTokenForm);
+      clearTerminalButton.addEventListener("click", () => {
+        const view = terminalViews.get(activeTerminalId);
+        if (view) send({ type: "terminal-clear", terminalId: view.id });
+      });
 
-      document.querySelector("#chat-create-form").addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (!socket || socket.readyState !== WebSocket.OPEN || !chatRepository.value || !chatToken.value) return;
-        socket.send(JSON.stringify({
-          type: "chat-create",
-          repoId: chatRepository.value,
-          tokenId: chatToken.value
-        }));
+      interruptTerminalButton.addEventListener("click", () => {
+        const view = terminalViews.get(activeTerminalId);
+        if (view) send({ type: "terminal-signal", terminalId: view.id });
       });
 
       document.querySelector("#logout").addEventListener("click", async () => {

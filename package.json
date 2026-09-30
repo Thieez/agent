@@ -2,7 +2,7 @@
   "name": "copilot-repo-web",
   "version": "1.0.0",
   "private": true,
-  "description": "A small Render-hosted web UI for cloning GitHub repositories and using Copilot CLI.",
+  "description": "A small Render-hosted web UI for cloning GitHub repositories and using browser terminals.",
   "engines": {
     "node": ">=22"
   },
@@ -11,8 +11,13 @@
     "test": "node --test"
   },
   "dependencies": {
-    "@github/copilot": "^1.0.89",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "express": "^5.1.0",
+    "node-pty": "^1.1.0",
     "ws": "^8.18.3"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true
   }
 }
