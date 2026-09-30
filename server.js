@@ -198,11 +198,11 @@ function appendTerminalOutput(terminal, text) {
   sendToSession(terminal.ownerId, { type: "terminal-output", terminalId: terminal.id, text });
 }
 
-function runCommand(command, args, options, timeoutMs, onOutput) {
+function runCommand(command, args, options, timeoutMs) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       ...options,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: "ignore",
       detached: process.platform !== "win32",
       windowsHide: true
     });
@@ -239,8 +239,6 @@ function runCommand(command, args, options, timeoutMs, onOutput) {
       else resolve();
     }
 
-    child.stdout.on("data", (chunk) => onOutput(chunk.toString()));
-    child.stderr.on("data", (chunk) => onOutput(chunk.toString()));
     child.on("error", (error) => finish(error));
     child.on("close", (code) => {
       if (timedOut) finish(new Error("Przekroczono limit czasu polecenia."));
@@ -589,7 +587,6 @@ webSockets.on("connection", (socket) => {
 
       cloneRunning = true;
       broadcast({ type: "clone-state", busy: true });
-      safeSend(socket, { type: "log", text: `Sprawdzanie dostępu tokenu ${token.name} do ${name}...\n` });
       let workspace;
       try {
         const [owner, repoName] = name.split("/");
@@ -608,7 +605,6 @@ webSockets.on("connection", (socket) => {
           throw new Error("GitHub nie zwrócił prawidłowej nazwy repozytorium.");
         }
         const cloneName = repo.full_name;
-        safeSend(socket, { type: "log", text: `Klonowanie ${cloneName}...\n` });
         workspace = await mkdtemp(path.join(os.tmpdir(), "copilot-repo-"));
         const id = crypto.randomUUID();
         const auth = Buffer.from(`x-access-token:${token.value}`).toString("base64");
@@ -619,14 +615,12 @@ webSockets.on("connection", (socket) => {
         env.GIT_CONFIG_VALUE_0 = `AUTHORIZATION: basic ${auth}`;
         await runCommand(
           "git",
-          ["clone", "--progress", "--", `https://github.com/${cloneName}.git`, workspace],
+          ["clone", "--", `https://github.com/${cloneName}.git`, workspace],
           { cwd: os.tmpdir(), env },
-          10 * 60 * 1000,
-          (text) => safeSend(socket, { type: "log", text })
+          10 * 60 * 1000
         );
         sessionRepos.set(id, { name: cloneName, path: workspace });
         safeSend(socket, { type: "repo", id, name: cloneName });
-        safeSend(socket, { type: "log", text: `Gotowe: ${cloneName}\n` });
       } catch (error) {
         if (workspace) {
           try {
