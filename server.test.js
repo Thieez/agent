@@ -55,6 +55,44 @@ test("terminal PTY runs interactive shell commands", {
   }
 });
 
+test("credential status verifies environment token scopes without exposing the token", async () => {
+  if (!server.listening) await once(server, "listening");
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(`${origin}/api/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: process.env.APP_PASSWORD })
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const originalFetch = global.fetch;
+  global.fetch = async (url, options) => {
+    assert.equal(url, "https://api.github.com/user");
+    assert.equal(options.headers.Authorization, `Bearer ${process.env.GITHUB_TOKEN}`);
+    return new Response(JSON.stringify({ login: "test-user" }), {
+      status: 200,
+      headers: { "x-oauth-scopes": "repo, read:org" }
+    });
+  };
+
+  try {
+    const response = await originalFetch(`${origin}/api/credentials`, {
+      headers: { Cookie: cookie }
+    });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.credentials[0].status, "valid");
+    assert.equal(result.credentials[0].login, "test-user");
+    assert.deepEqual(
+      result.credentials[0].permissions.map((permission) => permission.name),
+      ["repo", "read:org"]
+    );
+    assert.equal(JSON.stringify(result).includes(process.env.GITHUB_TOKEN), false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("terminal WebSocket requires an available cloned repository", async () => {
   if (!server.listening) await once(server, "listening");
   const origin = `http://127.0.0.1:${server.address().port}`;

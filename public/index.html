@@ -32,6 +32,13 @@
       .terminal-panel { height: 52vh; min-height: 280px; padding: 12px; background: #010409; border: 1px solid #30363d; border-top: 0; }
       .terminal-panel[hidden] { display: none; }
       .terminal-host { width: 100%; height: 100%; }
+      .credential-card { margin-top: 12px; padding: 14px; border: 1px solid #30363d; border-radius: 7px; background: #0d1117; }
+      .credential-heading { display: flex; justify-content: space-between; gap: 12px; }
+      .credential-details { margin-top: 8px; }
+      .credential-permissions { margin: 8px 0 0; padding-left: 20px; }
+      .credential-status { color: #3fb950; }
+      .credential-status.invalid { color: #ff7b72; }
+      .credential-status.unavailable { color: #d29922; }
       .empty { padding: 28px 8px; text-align: center; }
       @media (max-width: 600px) {
         body { margin-top: 20px; }
@@ -46,6 +53,11 @@
       <button id="logout" class="secondary" type="button">Wyloguj</button>
     </header>
     <p class="muted">Każda zakładka uruchamia osobny terminal w wybranym repozytorium. Sesje terminali działają do zamknięcia zakładki lub wygaśnięcia sesji. Używaj tylko zaufanych repozytoriów.</p>
+    <section>
+      <h2>Token z konfiguracji środowiska</h2>
+      <p class="muted">Tokenu nie dodaje się na stronie. Skonfiguruj go jako sekret GITHUB_TOKEN w usłudze Render. Wartość klucza nigdy nie jest wysyłana do przeglądarki.</p>
+      <div id="credentials" aria-live="polite"><p class="muted">Sprawdzanie konfiguracji…</p></div>
+    </section>
     <section>
       <form id="clone-form">
         <label for="repo">Repozytorium GitHub</label>
@@ -87,6 +99,7 @@
     <script src="/vendor/addon-fit.js"></script>
     <script>
       const log = document.querySelector("#log");
+      const credentialsElement = document.querySelector("#credentials");
       const cloneButton = document.querySelector("#clone-form button");
       const createTerminalButton = document.querySelector("#terminal-create");
       const terminalRepository = document.querySelector("#terminal-repository");
@@ -253,9 +266,59 @@
         updateRepositorySelector();
       }
 
+      function renderCredentials(credentials) {
+        credentialsElement.replaceChildren();
+        for (const credential of credentials) {
+          const card = document.createElement("article");
+          card.className = "credential-card";
+          const heading = document.createElement("div");
+          heading.className = "credential-heading";
+          const name = document.createElement("strong");
+          name.textContent = credential.name;
+          const status = document.createElement("span");
+          status.className = `credential-status ${credential.status}`;
+          status.textContent = {
+            valid: "Dostępny",
+            invalid: "Nieprawidłowy",
+            unavailable: "Niezweryfikowany",
+            not_configured: "Brak w konfiguracji"
+          }[credential.status] || "Nieznany status";
+          heading.append(name, status);
+
+          const details = document.createElement("div");
+          details.className = "credential-details muted";
+          details.textContent = `${credential.purpose}${credential.login ? ` · GitHub: ${credential.login}` : ""}${credential.tokenType ? ` · ${credential.tokenType}` : ""}`;
+          card.append(heading, details);
+
+          if (credential.permissions.length) {
+            const permissions = document.createElement("ul");
+            permissions.className = "credential-permissions muted";
+            for (const permission of credential.permissions) {
+              const item = document.createElement("li");
+              item.textContent = `${permission.name} — ${permission.description}`;
+              permissions.append(item);
+            }
+            card.append(permissions);
+          }
+
+          const note = document.createElement("p");
+          note.className = "muted";
+          note.textContent = credential.permissionMessage;
+          card.append(note);
+          credentialsElement.append(card);
+        }
+      }
+
       async function connect() {
         const session = await fetch("/api/session");
         if (!session.ok) return location.assign("/login");
+        const credentialResponse = await fetch("/api/credentials");
+        if (!credentialResponse.ok) {
+          credentialsElement.textContent = "Nie udało się pobrać informacji o tokenach środowiskowych.";
+        } else {
+          const credentialData = await credentialResponse.json();
+          renderCredentials(credentialData.credentials);
+        }
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         socket = new WebSocket(`${protocol}//${location.host}/ws`);
         socket.addEventListener("message", (event) => {

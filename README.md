@@ -5,9 +5,10 @@ Prosta aplikacja webowa do klonowania repozytoriów GitHub i pracy w interaktywn
 ## Wymagane sekrety
 
 - `APP_PASSWORD` — mocne hasło do strony, co najmniej 24 znaki.
-- `GITHUB_TOKEN` — token konta, z którego klonujesz repozytoria. Ogranicz go do potrzebnych repozytoriów i uprawnienia `Contents: Read-only`.
+- `GITHUB_TOKEN` — opcjonalny token konta do klonowania repozytoriów. Bez niego aplikacja działa, ale klonowanie jest niedostępne. Ogranicz go do potrzebnych repozytoriów i uprawnienia `Contents: Read-only`.
 
 Token GitHub służy wyłącznie do klonowania repozytoriów i nie jest przekazywany do procesów terminala.
+Wartość tokenu ustaw jako sekret `GITHUB_TOKEN` w konfiguracji usługi Render; aplikacja nie przyjmuje tokenów w formularzach ani nie zwraca ich do przeglądarki. Zalogowana strona pokazuje, czy token jest skonfigurowany i zaakceptowany przez GitHub, jego typ, nazwę konta oraz zakresy OAuth, jeśli GitHub je udostępnia. GitHub nie udostępnia przez API pełnej listy uprawnień tokenów fine-grained, więc dla nich strona wyraźnie zaznaczy, że szczegóły trzeba sprawdzić w ustawieniach tokenu. Aplikacja nie wyświetla innych sekretów środowiskowych.
 
 ## Terminale
 
