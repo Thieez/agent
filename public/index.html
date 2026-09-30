@@ -17,7 +17,16 @@
       button { background: #238636; color: white; cursor: pointer; font-weight: 600; }
       button.secondary { background: #21262d; border-color: #484f58; }
       button:disabled { opacity: .55; cursor: wait; }
-      #log { min-height: 250px; max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border: 1px solid #30363d; border-radius: 7px; background: #010409; color: #c9d1d9; font: 13px ui-monospace, monospace; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; padding: 14px; border: 1px solid #30363d; border-radius: 7px; background: #010409; color: #c9d1d9; font: 13px ui-monospace, monospace; }
+      #log { min-height: 90px; max-height: 25vh; }
+      .chat-output { min-height: 160px; max-height: 40vh; }
+      .token-item, .chat-card { margin-top: 12px; padding: 14px; border: 1px solid #30363d; border-radius: 7px; background: #0d1117; }
+      .token-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .token-actions { display: flex; gap: 8px; }
+      .chat-card h3 { margin: 0; font-size: 1rem; }
+      .chat-card textarea { margin-top: 14px; }
+      .token-meta { display: grid; gap: 4px; overflow-wrap: anywhere; }
+      .empty { padding: 12px 0; }
       .row { display: flex; gap: 10px; }
       .row > * { flex: 1; }
       .muted { color: #8b949e; font-size: .9rem; }
@@ -31,15 +40,20 @@
     </header>
     <p class="muted">Repozytoria są klonowane do tymczasowego katalogu Rendera. Używaj tylko zaufanych repozytoriów.</p>
     <section>
-      <button id="copilot-login" type="button">Zaloguj Copilot przez GitHub</button>
-      <span id="copilot-status" class="muted">Copilot nie jest zalogowany w tej instancji.</span>
-      <p class="muted">Kliknij przycisk, a następnie otwórz w logu podany adres i wpisz kod albo podaj token konta z dostępem do Copilot.</p>
-      <form id="copilot-token-form">
-        <label for="copilot-token">Token Copilot</label>
-        <input id="copilot-token" name="token" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="github_pat_… lub gho_…" maxlength="4096" required>
-        <button type="submit">Użyj tokenu</button>
+      <h2>Tokeny Copilot</h2>
+      <form id="token-form">
+        <input id="token-id" name="tokenId" type="hidden">
+        <label for="token-label">Nazwa tokenu</label>
+        <input id="token-label" name="label" maxlength="40" placeholder="Np. konto osobiste" required>
+        <label for="token-value">Token</label>
+        <input id="token-value" name="token" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="github_pat_… lub gho_…" maxlength="4096" required>
+        <div class="row">
+          <button id="token-submit" type="submit">Dodaj token</button>
+          <button id="token-cancel" class="secondary" type="button" hidden>Anuluj edycję</button>
+        </div>
       </form>
-      <p class="muted">Fine-grained PAT musi mieć uprawnienie konta „Copilot Requests”. Utwórz go w <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">ustawieniach GitHub</a>. Token jest przechowywany tylko w pamięci tej instancji do restartu i nie jest wyświetlany ponownie.</p>
+      <p class="muted">Fine-grained PAT musi mieć uprawnienie konta „Copilot Requests”. <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Utwórz token w ustawieniach GitHub</a>. Tokeny nie są wyświetlane ponownie. Zmiany są przechowywane do restartu instancji.</p>
+      <div id="token-list" aria-live="polite"></div>
     </section>
     <section>
       <form id="clone-form">
@@ -49,51 +63,195 @@
           <button type="submit">Klonuj</button>
         </div>
       </form>
-      <label for="repositories">Repozytorium do pracy</label>
-      <select id="repositories" aria-label="Repozytorium do pracy">
-        <option value="">Najpierw sklonuj repozytorium</option>
-      </select>
-    </section>
-    <section>
-      <form id="prompt-form">
-        <label for="prompt">Polecenie dla Copilot CLI</label>
-        <textarea id="prompt" name="prompt" maxlength="8000" placeholder="Np. przeanalizuj projekt i napraw błąd w ..." required></textarea>
-        <button type="submit">Uruchom Copilota</button>
+      <form id="chat-create-form">
+        <label for="chat-repository">Repozytorium dla nowego chatu</label>
+        <select id="chat-repository" required>
+          <option value="">Najpierw sklonuj repozytorium</option>
+        </select>
+        <label for="chat-token">Token dla nowego chatu</label>
+        <select id="chat-token" required>
+          <option value="">Najpierw dodaj token</option>
+        </select>
+        <button type="submit">Utwórz chat</button>
       </form>
     </section>
     <section>
-      <label>Log</label>
+      <h2>Chaty Copilot</h2>
+      <p class="muted">Każdy chat ma osobny kontekst i token. Można uruchamiać zadania równolegle w różnych repozytoriach; jednocześnie działa maksymalnie 4 zadania.</p>
+      <div id="chats"></div>
+    </section>
+    <section>
+      <label>Log klonowania</label>
       <pre id="log" aria-live="polite"></pre>
     </section>
     <script>
       const log = document.querySelector("#log");
-      const repoSelect = document.querySelector("#repositories");
       const cloneButton = document.querySelector('#clone-form button');
-      const promptButton = document.querySelector('#prompt-form button');
-      const copilotLoginButton = document.querySelector("#copilot-login");
-      const copilotStatus = document.querySelector("#copilot-status");
-      const copilotTokenForm = document.querySelector("#copilot-token-form");
-      const copilotTokenInput = document.querySelector("#copilot-token");
-      const copilotTokenButton = copilotTokenForm.querySelector("button");
+      const tokenForm = document.querySelector("#token-form");
+      const tokenIdInput = document.querySelector("#token-id");
+      const tokenLabelInput = document.querySelector("#token-label");
+      const tokenValueInput = document.querySelector("#token-value");
+      const tokenSubmit = document.querySelector("#token-submit");
+      const tokenCancel = document.querySelector("#token-cancel");
+      const tokenList = document.querySelector("#token-list");
+      const chatRepository = document.querySelector("#chat-repository");
+      const chatToken = document.querySelector("#chat-token");
+      const chatsElement = document.querySelector("#chats");
       let socket;
-      let copilotAuthenticated = false;
-      let copilotTokenConfigured = false;
+      const tokens = new Map();
+      const repositories = new Map();
+      const chatViews = new Map();
 
       function appendLog(text) {
         log.textContent += text;
         log.scrollTop = log.scrollHeight;
       }
 
-      function addRepository(repo) {
-        let option = [...repoSelect.options].find((item) => item.value === repo.id);
-        if (!option) {
-          if (repoSelect.options.length === 1 && !repoSelect.options[0].value) repoSelect.replaceChildren();
-          option = document.createElement("option");
-          option.value = repo.id;
-          option.textContent = repo.name;
-          repoSelect.append(option);
+      function makeOption(value, text) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = text;
+        return option;
+      }
+
+      function updateSelectors() {
+        const previousRepo = chatRepository.value;
+        const previousToken = chatToken.value;
+        chatRepository.replaceChildren(makeOption("", repositories.size ? "Wybierz repozytorium" : "Najpierw sklonuj repozytorium"));
+        for (const [id, repo] of repositories) chatRepository.append(makeOption(id, repo.name));
+        chatToken.replaceChildren(makeOption("", tokens.size ? "Wybierz token" : "Najpierw dodaj token"));
+        for (const [id, token] of tokens) chatToken.append(makeOption(id, `${token.label} (${token.masked})`));
+        if (repositories.has(previousRepo)) chatRepository.value = previousRepo;
+        if (tokens.has(previousToken)) chatToken.value = previousToken;
+      }
+
+      function resetTokenForm() {
+        tokenForm.reset();
+        tokenIdInput.value = "";
+        tokenValueInput.required = true;
+        tokenValueInput.placeholder = "github_pat_… lub gho_…";
+        tokenSubmit.textContent = "Dodaj token";
+        tokenSubmit.disabled = false;
+        tokenCancel.hidden = true;
+      }
+
+      function renderTokens() {
+        tokenList.replaceChildren();
+        if (!tokens.size) {
+          const empty = document.createElement("p");
+          empty.className = "muted empty";
+          empty.textContent = "Nie dodano jeszcze tokenów.";
+          tokenList.append(empty);
         }
-        repoSelect.value = repo.id;
+        for (const [id, token] of tokens) {
+          const row = document.createElement("div");
+          row.className = "token-item";
+          const meta = document.createElement("div");
+          meta.className = "token-meta";
+          const name = document.createElement("strong");
+          name.textContent = token.label;
+          const masked = document.createElement("span");
+          masked.className = "muted";
+          masked.textContent = token.masked;
+          meta.append(name, masked);
+          const actions = document.createElement("div");
+          actions.className = "token-actions";
+          const edit = document.createElement("button");
+          edit.type = "button";
+          edit.className = "secondary";
+          edit.textContent = "Edytuj";
+          edit.addEventListener("click", () => {
+            tokenIdInput.value = id;
+            tokenLabelInput.value = token.label;
+            tokenValueInput.value = "";
+            tokenValueInput.required = false;
+            tokenValueInput.placeholder = "Zostaw puste, aby zachować obecny token";
+            tokenSubmit.textContent = "Zapisz zmiany";
+            tokenCancel.hidden = false;
+            tokenLabelInput.focus();
+          });
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "secondary";
+          remove.textContent = "Usuń";
+          remove.addEventListener("click", () => {
+            if (confirm(`Usunąć token „${token.label}” i przypisane do niego chaty?`)) {
+              socket.send(JSON.stringify({ type: "token-delete", tokenId: id }));
+            }
+          });
+          actions.append(edit, remove);
+          row.append(meta, actions);
+          tokenList.append(row);
+        }
+        updateSelectors();
+      }
+
+      function createChatView(chat) {
+        const card = document.createElement("article");
+        card.className = "chat-card";
+        const header = document.createElement("div");
+        header.className = "row";
+        const heading = document.createElement("h3");
+        const status = document.createElement("span");
+        status.className = "muted";
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "secondary";
+        close.textContent = "Zamknij chat";
+        close.addEventListener("click", () => {
+          if (!chatViews.get(chat.id)?.chat.busy) {
+            socket.send(JSON.stringify({ type: "chat-delete", chatId: chat.id }));
+          }
+        });
+        header.append(heading, status, close);
+        const output = document.createElement("pre");
+        output.className = "chat-output";
+        output.setAttribute("aria-live", "polite");
+        const form = document.createElement("form");
+        const prompt = document.createElement("textarea");
+        prompt.maxLength = 8000;
+        prompt.required = true;
+        prompt.placeholder = "Wpisz polecenie dla tego chatu...";
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.textContent = "Uruchom w tym chacie";
+        form.append(prompt, submit);
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          if (!prompt.value.trim() || !socket || socket.readyState !== WebSocket.OPEN) return;
+          submit.disabled = true;
+          socket.send(JSON.stringify({ type: "chat-prompt", chatId: chat.id, prompt: prompt.value }));
+          prompt.value = "";
+        });
+        card.append(header, output, form);
+        chatsElement.prepend(card);
+        const view = { card, heading, status, output, submit, chat };
+        chatViews.set(chat.id, view);
+        updateChatView(chat);
+        return view;
+      }
+
+      function updateChatView(chat) {
+        let view = chatViews.get(chat.id);
+        if (!view) view = createChatView(chat);
+        view.chat = chat;
+        view.heading.textContent = `${chat.repoName} · ${chat.tokenLabel}`;
+        view.status.textContent = chat.busy ? "Copilot pracuje…" : "Gotowy";
+        view.output.textContent = chat.output;
+        view.output.scrollTop = view.output.scrollHeight;
+        view.submit.disabled = chat.busy;
+      }
+
+      function removeChat(chatId) {
+        const view = chatViews.get(chatId);
+        if (!view) return;
+        view.card.remove();
+        chatViews.delete(chatId);
+      }
+
+      function addRepository(repo) {
+        repositories.set(repo.id, repo);
+        updateSelectors();
       }
 
       async function connect() {
@@ -106,41 +264,39 @@
           if (message.type === "log") appendLog(message.text);
           if (message.type === "error") {
             appendLog(`\nBŁĄD: ${message.text}\n`);
-            copilotTokenButton.disabled = false;
+            tokenSubmit.disabled = false;
+            cloneButton.disabled = false;
+            for (const view of chatViews.values()) view.submit.disabled = view.chat.busy;
           }
           if (message.type === "repo") addRepository(message);
           if (message.type === "ready") {
-            message.repos.forEach(addRepository);
-            copilotAuthenticated = message.copilotAuthenticated;
-            copilotTokenConfigured = message.copilotTokenConfigured;
-            copilotStatus.textContent = copilotTokenConfigured
-              ? "Token Copilot jest ustawiony."
-              : copilotAuthenticated
-              ? "Copilot jest zalogowany."
-              : "Copilot nie jest zalogowany w tej instancji.";
+            repositories.clear();
+            for (const repo of message.repos) repositories.set(repo.id, repo);
+            tokens.clear();
+            for (const token of message.tokens) tokens.set(token.id, token);
+            renderTokens();
+            for (const chat of message.chats) updateChatView(chat);
           }
-          if (message.type === "copilot-authenticated") {
-            copilotAuthenticated = message.authenticated;
-            copilotStatus.textContent = copilotTokenConfigured
-              ? "Token Copilot jest ustawiony."
-              : copilotAuthenticated
-              ? "Copilot jest zalogowany."
-              : "Copilot nie jest zalogowany.";
+          if (message.type === "tokens") {
+            tokens.clear();
+            for (const token of message.tokens) tokens.set(token.id, token);
+            renderTokens();
           }
-          if (message.type === "copilot-token-saved") {
-            copilotTokenConfigured = true;
-            copilotAuthenticated = true;
-            copilotTokenInput.value = "";
-            copilotTokenButton.disabled = false;
-            copilotStatus.textContent = "Token Copilot jest ustawiony.";
+          if (message.type === "token-saved") {
+            resetTokenForm();
+            appendLog("Token Copilot został zapisany.\n");
           }
-          if (message.type === "busy") {
-            cloneButton.disabled = message.busy;
-            promptButton.disabled = message.busy;
-            copilotLoginButton.disabled = message.busy;
-            copilotTokenInput.disabled = message.busy;
-            copilotTokenButton.disabled = message.busy;
+          if (message.type === "chat-created") updateChatView(message.chat);
+          if (message.type === "chat-state") updateChatView(message.chat);
+          if (message.type === "chat-log") {
+            const view = chatViews.get(message.chatId);
+            if (view) {
+              view.output.textContent += message.text;
+              view.output.scrollTop = view.output.scrollHeight;
+            }
           }
+          if (message.type === "chat-deleted") removeChat(message.chatId);
+          if (message.type === "clone-state") cloneButton.disabled = message.busy;
         });
         socket.addEventListener("open", () => appendLog("Połączono z serwerem.\n"));
         socket.addEventListener("close", () => appendLog("\nPołączenie WebSocket zostało zamknięte.\n"));
@@ -154,37 +310,27 @@
         socket.send(JSON.stringify({ type: "clone", repo: document.querySelector("#repo").value }));
       });
 
-      copilotLoginButton.addEventListener("click", () => {
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        copilotLoginButton.disabled = true;
-        socket.send(JSON.stringify({ type: "copilot-login" }));
-      });
-
-      copilotTokenForm.addEventListener("submit", (event) => {
+      tokenForm.addEventListener("submit", (event) => {
         event.preventDefault();
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        copilotTokenButton.disabled = true;
+        tokenSubmit.disabled = true;
         socket.send(JSON.stringify({
-          type: "copilot-token",
-          token: copilotTokenInput.value
+          type: "token-save",
+          tokenId: tokenIdInput.value || null,
+          label: tokenLabelInput.value,
+          token: tokenValueInput.value
         }));
       });
 
-      document.querySelector("#prompt-form").addEventListener("submit", (event) => {
+      tokenCancel.addEventListener("click", resetTokenForm);
+
+      document.querySelector("#chat-create-form").addEventListener("submit", (event) => {
         event.preventDefault();
-        if (!copilotAuthenticated) {
-          appendLog("Najpierw zaloguj Copilot przez GitHub.\n");
-          return;
-        }
-        if (!socket || socket.readyState !== WebSocket.OPEN || !repoSelect.value) {
-          appendLog("Wybierz sklonowane repozytorium.\n");
-          return;
-        }
-        promptButton.disabled = true;
+        if (!socket || socket.readyState !== WebSocket.OPEN || !chatRepository.value || !chatToken.value) return;
         socket.send(JSON.stringify({
-          type: "prompt",
-          repoId: repoSelect.value,
-          prompt: document.querySelector("#prompt").value
+          type: "chat-create",
+          repoId: chatRepository.value,
+          tokenId: chatToken.value
         }));
       });
 

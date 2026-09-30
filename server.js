@@ -10,10 +10,13 @@ const { parseRepository } = require("./repository");
 const PORT = Number(process.env.PORT || 3000);
 const APP_PASSWORD = process.env.APP_PASSWORD;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-let copilotToken = process.env.COPILOT_GITHUB_TOKEN || null;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_REPOSITORIES_PER_SESSION = 3;
+const MAX_TOKENS = 10;
+const MAX_CHATS_PER_SESSION = 10;
+const MAX_ACTIVE_COPILOT_RUNS = 4;
 const MAX_PROMPT_LENGTH = 8000;
+const MAX_CHAT_OUTPUT_LENGTH = 100000;
 const COPILOT_ENTRY = path.join(__dirname, "node_modules", "@github", "copilot", "npm-loader.js");
 const COPILOT_HOME = path.join(os.tmpdir(), `copilot-home-${crypto.randomUUID()}`);
 
@@ -26,8 +29,18 @@ if (!APP_PASSWORD || APP_PASSWORD.length < 24 || !GITHUB_TOKEN) {
 const app = express();
 const sessions = new Map();
 const repositories = new Map();
-let commandRunning = false;
-let copilotAuthenticated = Boolean(copilotToken);
+const chats = new Map();
+const sessionSockets = new Map();
+const copilotTokens = new Map();
+const activeCopilotRuns = new Set();
+let cloneRunning = false;
+
+if (process.env.COPILOT_GITHUB_TOKEN) {
+  copilotTokens.set(crypto.randomUUID(), {
+    label: "Token z konfiguracji Rendera",
+    value: process.env.COPILOT_GITHUB_TOKEN
+  });
+}
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "16kb" }));
@@ -68,6 +81,7 @@ function removeSession(key) {
   sessions.delete(key);
   const sessionRepos = repositories.get(key);
   repositories.delete(key);
+  chats.delete(key);
   if (!sessionRepos) return;
   for (const repo of sessionRepos.values()) {
     rm(repo.path, { recursive: true, force: true }).catch((error) => {
@@ -87,7 +101,50 @@ function safeSend(socket, data) {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data));
 }
 
-function runCommand(socket, command, args, options, timeoutMs) {
+function sendToSession(sessionId, data) {
+  for (const socket of sessionSockets.get(sessionId) || []) safeSend(socket, data);
+}
+
+function broadcast(data) {
+  for (const sockets of sessionSockets.values()) {
+    for (const socket of sockets) safeSend(socket, data);
+  }
+}
+
+function publicTokens() {
+  return [...copilotTokens.entries()].map(([id, token]) => ({
+    id,
+    label: token.label,
+    masked: `••••${token.value.slice(-4)}`
+  }));
+}
+
+function publicChat(chat) {
+  return {
+    id: chat.id,
+    tokenId: chat.tokenId,
+    tokenLabel: copilotTokens.get(chat.tokenId)?.label || "Token usunięty",
+    repoId: chat.repoId,
+    repoName: chat.repoName,
+    output: chat.output,
+    busy: chat.busy
+  };
+}
+
+function appendChatOutput(chat, text) {
+  chat.output += text;
+  if (chat.output.length > MAX_CHAT_OUTPUT_LENGTH) {
+    chat.output = `[starsze logi ucięte]\n${chat.output.slice(-MAX_CHAT_OUTPUT_LENGTH)}`;
+  }
+  sendToSession(chat.ownerId, { type: "chat-log", chatId: chat.id, text });
+}
+
+function setChatBusy(chat, busy) {
+  chat.busy = busy;
+  sendToSession(chat.ownerId, { type: "chat-state", chat: publicChat(chat) });
+}
+
+function runCommand(command, args, options, timeoutMs, onOutput) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       ...options,
@@ -128,8 +185,8 @@ function runCommand(socket, command, args, options, timeoutMs) {
       else resolve();
     }
 
-    child.stdout.on("data", (chunk) => safeSend(socket, { type: "log", text: chunk.toString() }));
-    child.stderr.on("data", (chunk) => safeSend(socket, { type: "log", text: chunk.toString() }));
+    child.stdout.on("data", (chunk) => onOutput(chunk.toString()));
+    child.stderr.on("data", (chunk) => onOutput(chunk.toString()));
     child.on("error", (error) => finish(error));
     child.on("close", (code) => {
       if (timedOut) finish(new Error("Przekroczono limit czasu polecenia."));
@@ -148,9 +205,9 @@ function childEnvironment() {
   return env;
 }
 
-function copilotEnvironment() {
+function copilotEnvironment(token) {
   const env = childEnvironment();
-  if (copilotToken) env.COPILOT_GITHUB_TOKEN = copilotToken;
+  env.COPILOT_GITHUB_TOKEN = token;
   return env;
 }
 
@@ -232,12 +289,23 @@ webSockets.on("connection", (socket) => {
     sessionRepos = new Map();
     repositories.set(socket.session.id, sessionRepos);
   }
+  let sessionChats = chats.get(socket.session.id);
+  if (!sessionChats) {
+    sessionChats = new Map();
+    chats.set(socket.session.id, sessionChats);
+  }
+  let sockets = sessionSockets.get(socket.session.id);
+  if (!sockets) {
+    sockets = new Set();
+    sessionSockets.set(socket.session.id, sockets);
+  }
+  sockets.add(socket);
 
   safeSend(socket, {
     type: "ready",
-    copilotAuthenticated,
-    copilotTokenConfigured: Boolean(copilotToken),
-    repos: [...sessionRepos.entries()].map(([id, repo]) => ({ id, name: repo.name }))
+    tokens: publicTokens(),
+    repos: [...sessionRepos.entries()].map(([id, repo]) => ({ id, name: repo.name })),
+    chats: [...sessionChats.values()].map(publicChat)
   });
 
   socket.on("message", async (raw) => {
@@ -255,49 +323,142 @@ webSockets.on("connection", (socket) => {
     if (!message || typeof message !== "object") {
       return safeSend(socket, { type: "error", text: "Nieprawidłowa wiadomość." });
     }
-    if (commandRunning) {
-      return safeSend(socket, { type: "error", text: "Inne zadanie jest już uruchomione." });
-    }
 
-    if (message.type === "copilot-token") {
+    if (message.type === "token-save") {
+      const tokenId = typeof message.tokenId === "string" ? message.tokenId : null;
+      const existing = tokenId ? copilotTokens.get(tokenId) : null;
+      if (tokenId && !existing) {
+        return safeSend(socket, { type: "error", text: "Nie znaleziono tokenu do edycji." });
+      }
+      const label = typeof message.label === "string" ? message.label.trim() : "";
       const token = typeof message.token === "string" ? message.token.trim() : "";
       if (
-        token.length > 4096 ||
-        !/^(?:gho_|github_pat_|ghu_)[A-Za-z0-9_]+$/.test(token)
+        !label ||
+        label.length > 40 ||
+        (!existing && !token) ||
+        (token && (token.length > 4096 || !/^(?:gho_|github_pat_|ghu_)[A-Za-z0-9_-]+$/.test(token)))
       ) {
         return safeSend(socket, {
           type: "error",
-          text: "Nieprawidłowy token. Użyj tokenu OAuth (gho_), fine-grained PAT (github_pat_) lub tokenu GitHub App (ghu_)."
+          text: "Podaj nazwę do 40 znaków i poprawny token OAuth (gho_), fine-grained PAT (github_pat_) lub GitHub App (ghu_)."
         });
       }
-      copilotToken = token;
-      copilotAuthenticated = true;
-      safeSend(socket, { type: "copilot-token-saved" });
-      safeSend(socket, { type: "copilot-authenticated", authenticated: true });
+      if (!existing && copilotTokens.size >= MAX_TOKENS) {
+        return safeSend(socket, { type: "error", text: `Można dodać maksymalnie ${MAX_TOKENS} tokenów.` });
+      }
+      const id = tokenId || crypto.randomUUID();
+      copilotTokens.set(id, {
+        label,
+        value: token || existing.value
+      });
+      broadcast({ type: "tokens", tokens: publicTokens() });
+      return safeSend(socket, { type: "token-saved", tokenId: id });
+    }
+
+    if (message.type === "token-delete") {
+      const tokenId = typeof message.tokenId === "string" ? message.tokenId : "";
+      if (!copilotTokens.has(tokenId)) {
+        return safeSend(socket, { type: "error", text: "Nie znaleziono tokenu do usunięcia." });
+      }
+      const linkedChats = [...chats.entries()].flatMap(([ownerId, ownerChats]) =>
+        [...ownerChats.values()]
+          .filter((chat) => chat.tokenId === tokenId)
+          .map((chat) => ({ ownerId, ownerChats, chat }))
+      );
+      if (linkedChats.some(({ chat }) => chat.busy)) {
+        return safeSend(socket, { type: "error", text: "Nie można usunąć tokenu, gdy przypisany do niego chat działa." });
+      }
+      for (const { ownerId, ownerChats, chat } of linkedChats) {
+        ownerChats.delete(chat.id);
+        sendToSession(ownerId, { type: "chat-deleted", chatId: chat.id });
+      }
+      copilotTokens.delete(tokenId);
+      broadcast({ type: "tokens", tokens: publicTokens() });
       return;
     }
 
-    if (message.type === "copilot-login") {
-      commandRunning = true;
-      safeSend(socket, { type: "busy", busy: true });
-      safeSend(socket, { type: "log", text: "\nRozpoczynam logowanie Copilot przez konto GitHub.\n" });
+    if (message.type === "chat-create") {
+      const tokenId = typeof message.tokenId === "string" ? message.tokenId : "";
+      const repoId = typeof message.repoId === "string" ? message.repoId : "";
+      const token = copilotTokens.get(tokenId);
+      const repo = sessionRepos.get(repoId);
+      if (!token) return safeSend(socket, { type: "error", text: "Najpierw dodaj token Copilot." });
+      if (!repo) return safeSend(socket, { type: "error", text: "Najpierw sklonuj i wybierz repozytorium." });
+      if (sessionChats.size >= MAX_CHATS_PER_SESSION) {
+        return safeSend(socket, { type: "error", text: `Można utworzyć maksymalnie ${MAX_CHATS_PER_SESSION} chatów.` });
+      }
+      const chat = {
+        id: crypto.randomUUID(),
+        cliSessionId: crypto.randomUUID(),
+        ownerId: socket.session.id,
+        tokenId,
+        repoId,
+        repoName: repo.name,
+        output: "",
+        busy: false
+      };
+      sessionChats.set(chat.id, chat);
+      return safeSend(socket, { type: "chat-created", chat: publicChat(chat) });
+    }
+
+    if (message.type === "chat-delete") {
+      const chatId = typeof message.chatId === "string" ? message.chatId : "";
+      const chat = sessionChats.get(chatId);
+      if (!chat) return safeSend(socket, { type: "error", text: "Nie znaleziono chatu." });
+      if (chat.busy) return safeSend(socket, { type: "error", text: "Nie można zamknąć chatu podczas wykonywania zadania." });
+      sessionChats.delete(chatId);
+      return safeSend(socket, { type: "chat-deleted", chatId });
+    }
+
+    if (message.type === "chat-prompt") {
+      const chatId = typeof message.chatId === "string" ? message.chatId : "";
+      const chat = sessionChats.get(chatId);
+      if (!chat) return safeSend(socket, { type: "error", text: "Nie znaleziono chatu." });
+      if (chat.busy) return safeSend(socket, { type: "error", text: "Ten chat już działa." });
+      const token = copilotTokens.get(chat.tokenId);
+      if (!token) return safeSend(socket, { type: "error", text: "Token przypisany do tego chatu został usunięty." });
+      const repo = sessionRepos.get(chat.repoId);
+      if (!repo) return safeSend(socket, { type: "error", text: "Repozytorium tego chatu nie jest już dostępne." });
+      if (activeCopilotRuns.size >= MAX_ACTIVE_COPILOT_RUNS) {
+        return safeSend(socket, { type: "error", text: `Limit równoległych zadań Copilot (${MAX_ACTIVE_COPILOT_RUNS}) został osiągnięty.` });
+      }
+      if ([...activeCopilotRuns].some((active) => active.repoPath === repo.path)) {
+        return safeSend(socket, { type: "error", text: "Inny chat już pracuje w tym repozytorium. Uruchom go na innym repozytorium, aby uniknąć konfliktów zmian." });
+      }
+      if (typeof message.prompt !== "string" || !message.prompt.trim() || message.prompt.length > MAX_PROMPT_LENGTH) {
+        return safeSend(socket, { type: "error", text: `Polecenie musi mieć od 1 do ${MAX_PROMPT_LENGTH} znaków.` });
+      }
+
+      const activeRun = { chatId: chat.id, repoPath: repo.path };
+      activeCopilotRuns.add(activeRun);
+      setChatBusy(chat, true);
+      appendChatOutput(chat, `\n> ${message.prompt.trim()}\n\nUruchamiam Copilot CLI...\n`);
       try {
         await mkdir(COPILOT_HOME, { recursive: true });
         await runCommand(
-          socket,
           process.execPath,
-          [COPILOT_ENTRY, "login", "--device-code"],
-          { cwd: os.tmpdir(), env: childEnvironment() },
-          10 * 60 * 1000
+          [
+            COPILOT_ENTRY,
+            "--prompt",
+            message.prompt.trim(),
+            "--session-id",
+            chat.cliSessionId,
+            "--secret-env-vars=COPILOT_GITHUB_TOKEN",
+            "--allow-all-tools",
+            "--no-ask-user",
+            "--no-color",
+            "--no-auto-update"
+          ],
+          { cwd: repo.path, env: copilotEnvironment(token.value) },
+          20 * 60 * 1000,
+          (text) => appendChatOutput(chat, text)
         );
-        copilotAuthenticated = true;
-        safeSend(socket, { type: "copilot-authenticated", authenticated: true });
-        safeSend(socket, { type: "log", text: "\nLogowanie Copilot zakończone.\n" });
+        appendChatOutput(chat, "\nCopilot zakończył zadanie.\n");
       } catch (error) {
-        safeSend(socket, { type: "error", text: `Logowanie Copilot nie powiodło się: ${error.message}` });
+        appendChatOutput(chat, `\nBŁĄD Copilot CLI: ${error.message}\n`);
       } finally {
-        commandRunning = false;
-        safeSend(socket, { type: "busy", busy: false });
+        activeCopilotRuns.delete(activeRun);
+        setChatBusy(chat, false);
       }
       return;
     }
@@ -307,12 +468,15 @@ webSockets.on("connection", (socket) => {
       if (!name) {
         return safeSend(socket, { type: "error", text: "Podaj repozytorium GitHub w formacie owner/repo." });
       }
+      if (cloneRunning) {
+        return safeSend(socket, { type: "error", text: "Inne repozytorium jest już klonowane." });
+      }
       if (sessionRepos.size >= MAX_REPOSITORIES_PER_SESSION) {
         return safeSend(socket, { type: "error", text: "Limit repozytoriów w tej sesji został osiągnięty." });
       }
 
-      commandRunning = true;
-      safeSend(socket, { type: "busy", busy: true });
+      cloneRunning = true;
+      broadcast({ type: "clone-state", busy: true });
       safeSend(socket, { type: "log", text: `Klonowanie ${name}...\n` });
       let workspace;
       try {
@@ -325,11 +489,11 @@ webSockets.on("connection", (socket) => {
         env.GIT_CONFIG_KEY_0 = "http.extraheader";
         env.GIT_CONFIG_VALUE_0 = `AUTHORIZATION: basic ${auth}`;
         await runCommand(
-          socket,
           "git",
           ["clone", "--progress", "--", `https://github.com/${name}.git`, workspace],
           { cwd: os.tmpdir(), env },
-          10 * 60 * 1000
+          10 * 60 * 1000,
+          (text) => safeSend(socket, { type: "log", text })
         );
         sessionRepos.set(id, { name, path: workspace });
         safeSend(socket, { type: "repo", id, name });
@@ -344,56 +508,18 @@ webSockets.on("connection", (socket) => {
         }
         safeSend(socket, { type: "error", text: `Nie udało się sklonować repozytorium: ${error.message}` });
       } finally {
-        commandRunning = false;
-        safeSend(socket, { type: "busy", busy: false });
-      }
-      return;
-    }
-
-    if (message.type === "prompt") {
-      if (!copilotAuthenticated) {
-        return safeSend(socket, {
-          type: "error",
-          text: "Najpierw zaloguj Copilot przyciskiem „Zaloguj Copilot przez GitHub”."
-        });
-      }
-      const repo = sessionRepos.get(message.repoId);
-      if (!repo) return safeSend(socket, { type: "error", text: "Najpierw sklonuj repozytorium." });
-      if (typeof message.prompt !== "string" || !message.prompt.trim() || message.prompt.length > MAX_PROMPT_LENGTH) {
-        return safeSend(socket, { type: "error", text: `Polecenie musi mieć od 1 do ${MAX_PROMPT_LENGTH} znaków.` });
-      }
-
-      commandRunning = true;
-      safeSend(socket, { type: "busy", busy: true });
-      const env = copilotEnvironment();
-      safeSend(socket, { type: "log", text: "\nUruchamiam Copilot CLI...\n" });
-      try {
-        await runCommand(
-          socket,
-          process.execPath,
-          [
-            COPILOT_ENTRY,
-            "--prompt",
-            message.prompt.trim(),
-            "--allow-all-tools",
-            "--no-ask-user",
-            "--no-color",
-            "--no-auto-update"
-          ],
-          { cwd: repo.path, env },
-          20 * 60 * 1000
-        );
-        safeSend(socket, { type: "log", text: "\nCopilot zakończył zadanie.\n" });
-      } catch (error) {
-        safeSend(socket, { type: "error", text: `Copilot CLI: ${error.message}` });
-      } finally {
-        commandRunning = false;
-        safeSend(socket, { type: "busy", busy: false });
+        cloneRunning = false;
+        broadcast({ type: "clone-state", busy: false });
       }
       return;
     }
 
     safeSend(socket, { type: "error", text: "Nieznany typ polecenia." });
+  });
+
+  socket.on("close", () => {
+    sockets.delete(socket);
+    if (sockets.size === 0) sessionSockets.delete(socket.session.id);
   });
 });
 
