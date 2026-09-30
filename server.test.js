@@ -167,7 +167,9 @@ test("multiple environment tokens list their own accounts and repositories", asy
   }
 });
 
-test("terminal WebSocket requires an available cloned repository", async () => {
+test("terminal WebSocket supports app-root sessions and rejects unknown repositories", {
+  skip: process.platform === "win32" && "ConPTY process cleanup requires a Windows console unavailable in the test host."
+}, async () => {
   if (!server.listening) await once(server, "listening");
   const origin = `http://127.0.0.1:${server.address().port}`;
   const login = await fetch(`${origin}/api/login`, {
@@ -208,7 +210,18 @@ test("terminal WebSocket requires an available cloned repository", async () => {
     socket.send(JSON.stringify({ type: "terminal-create", repoId: "not-cloned" }));
     const error = await nextMessage();
     assert.equal(error.type, "error");
-    assert.match(error.text, /Najpierw sklonuj i wybierz repozytorium/);
+    assert.match(error.text, /Wybierz sklonowane repozytorium albo katalog aplikacji/);
+
+    socket.send(JSON.stringify({ type: "terminal-create", repoId: "__app_root__" }));
+    const created = await nextMessage();
+    assert.equal(created.type, "terminal-created");
+    assert.equal(created.terminal.repoId, null);
+    assert.equal(created.terminal.repoName, "Katalog aplikacji");
+
+    socket.send(JSON.stringify({ type: "terminal-close", terminalId: created.terminal.id }));
+    const closed = await nextMessage();
+    assert.equal(closed.type, "terminal-closed");
+    assert.equal(closed.terminalId, created.terminal.id);
 
     socket.send(JSON.stringify({ type: "clone", tokenId: "GITHUB_TOKEN_MISSING", repo: "owner/repo" }));
     const cloneError = await nextMessage();

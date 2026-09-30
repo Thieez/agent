@@ -11,6 +11,7 @@ const { childEnvironment, terminalEnvironment } = require("./child-environment")
 
 const PORT = Number(process.env.PORT || 3000);
 const APP_PASSWORD = process.env.APP_PASSWORD;
+const APP_ROOT_TERMINAL_ID = "__app_root__";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_REPOSITORIES_PER_SESSION = 3;
 const MAX_TERMINALS_PER_SESSION = 10;
@@ -469,8 +470,11 @@ webSockets.on("connection", (socket) => {
       const copilotToken = copilotTokenName
         ? githubTokens().find(({ name }) => name === copilotTokenName)
         : null;
-      const repo = sessionRepos.get(repoId);
-      if (!repo) return safeSend(socket, { type: "error", text: "Najpierw sklonuj i wybierz repozytorium." });
+      const isAppRoot = repoId === APP_ROOT_TERMINAL_ID;
+      const repo = isAppRoot ? null : sessionRepos.get(repoId);
+      if (!isAppRoot && !repo) {
+        return safeSend(socket, { type: "error", text: "Wybierz sklonowane repozytorium albo katalog aplikacji." });
+      }
       if (copilotTokenName && !copilotToken) {
         return safeSend(socket, { type: "error", text: "Nie znaleziono wybranego tokenu Copilot w konfiguracji środowiska." });
       }
@@ -486,14 +490,14 @@ webSockets.on("connection", (socket) => {
           name: "xterm-256color",
           cols: 80,
           rows: 24,
-          cwd: repo.path,
+          cwd: isAppRoot ? __dirname : repo.path,
           env: { ...terminalEnvironment(copilotToken && copilotToken.value), TERM: "xterm-256color" }
         });
         terminal = {
           id: crypto.randomUUID(),
           ownerId: socket.session.id,
-          repoId,
-          repoName: repo.name,
+          repoId: isAppRoot ? null : repoId,
+          repoName: isAppRoot ? "Katalog aplikacji" : repo.name,
           copilotTokenName: copilotToken ? copilotToken.name : null,
           output: "",
           exited: false,

@@ -11,7 +11,7 @@ Tokeny GitHub ustaw jako sekrety środowiskowe usługi Render; aplikacja nie prz
 
 ## Terminale
 
-Najpierw sklonuj repozytorium, a następnie utwórz jedną z maksymalnie 10 zakładek terminala, wybierając repozytorium i opcjonalnie token Copilot. W terminalu z wybranym tokenem uruchom `copilot`; CLI używa tokenu przypisanego wyłącznie do tej zakładki, więc inne terminale mogą korzystać z innych kont. Każdy terminal uruchamia powłokę bezpośrednio w katalogu repozytorium i obsługuje interaktywne polecenia, Ctrl+C oraz zmianę rozmiaru. Zamknięcie zakładki kończy jej proces. Terminale i repozytoria znikają po wygaśnięciu sesji, restarcie lub wdrożeniu aplikacji.
+Utwórz jedną z maksymalnie 10 zakładek terminala, wybierając sklonowane repozytorium albo katalog aplikacji, aby uruchomić terminal bez klonowania. Opcjonalnie przypisz token Copilot. W terminalu z wybranym tokenem uruchom `copilot`; CLI używa tokenu przypisanego wyłącznie do tej zakładki, więc inne terminale mogą korzystać z innych kont. Każdy terminal obsługuje interaktywne polecenia, Ctrl+C oraz zmianę rozmiaru. Zamknięcie zakładki kończy jej proces. Terminale i repozytoria znikają po wygaśnięciu sesji, restarcie lub wdrożeniu aplikacji.
 
 Wybrany token Copilot jest dostępny jako `COPILOT_GITHUB_TOKEN` wewnątrz powłoki tego terminala, aby CLI mogło się nim uwierzytelnić. Ponieważ terminal udostępnia pełną powłokę, uruchamiane w nim polecenia mogą odczytać ten token. Pozostałe tokeny środowiskowe nie są przekazywane do terminala.
 

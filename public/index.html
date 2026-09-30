@@ -67,16 +67,16 @@
     </section>
     <section>
       <form id="terminal-create-form">
-        <label for="terminal-repository">Repozytorium dla nowej zakładki</label>
+        <label for="terminal-repository">Katalog startowy dla nowej zakładki</label>
         <select id="terminal-repository" required>
-          <option value="">Najpierw sklonuj repozytorium</option>
+          <option value="__app_root__">Katalog aplikacji (bez klonowania repozytorium)</option>
         </select>
         <label for="terminal-copilot-token">Token Copilot dla tej zakładki</label>
         <select id="terminal-copilot-token">
           <option value="">Terminal bez tokenu Copilot</option>
         </select>
         <button id="terminal-create" type="submit">Nowy terminal</button>
-        <p class="muted">W terminalu z wybranym tokenem uruchom polecenie <code>copilot</code>. Każdy terminal dostaje tylko przypisany token. Polecenia uruchamiane w tym terminalu mogą odczytać token ze zmiennej środowiskowej.</p>
+        <p class="muted">Możesz uruchomić terminal bez repozytorium w katalogu aplikacji. W terminalu z wybranym tokenem uruchom polecenie <code>copilot</code>. Każdy terminal dostaje tylko przypisany token. Polecenia uruchamiane w tym terminalu mogą odczytać token ze zmiennej środowiskowej.</p>
       </form>
     </section>
     <section>
@@ -92,7 +92,7 @@
       </div>
       <div id="terminal-tabs" class="terminal-tabs" role="tablist" aria-label="Zakładki terminali"></div>
       <div id="terminal-panels"></div>
-      <p id="terminal-empty" class="muted empty">Sklonuj repozytorium i utwórz terminal, aby rozpocząć.</p>
+      <p id="terminal-empty" class="muted empty">Utwórz terminal w katalogu aplikacji albo sklonowanym repozytorium.</p>
     </section>
     <section>
       <label for="log">Log klonowania</label>
@@ -141,9 +141,10 @@
 
       function updateRepositorySelector() {
         const previousRepo = terminalRepository.value;
-        terminalRepository.replaceChildren(makeOption("", repositories.size
-          ? "Wybierz repozytorium"
-          : "Najpierw sklonuj repozytorium"));
+        terminalRepository.replaceChildren(
+          makeOption("__app_root__", "Katalog aplikacji (bez klonowania repozytorium)"),
+          makeOption("", repositories.size ? "Wybierz repozytorium" : "Lub wybierz katalog aplikacji")
+        );
         for (const [id, repo] of repositories) {
           terminalRepository.append(makeOption(id, repo.name));
         }
