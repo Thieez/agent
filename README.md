@@ -6,8 +6,9 @@ Prosta aplikacja webowa do klonowania repozytoriów GitHub i uruchamiania zadań
 
 - `APP_PASSWORD` — mocne hasło do strony, co najmniej 24 znaki.
 - `GITHUB_TOKEN` — token konta, z którego klonujesz repozytoria. Ogranicz go do potrzebnych repozytoriów i uprawnienia `Contents: Read-only`.
+- `COPILOT_GITHUB_TOKEN` — opcjonalny token Copilot; można go też wpisać na stronie agenta.
 
-Copilot CLI loguje się osobno przez OAuth: kliknij **Zaloguj Copilot przez GitHub** na stronie, a następnie otwórz pokazany adres i wpisz kod na koncie z aktywną subskrypcją Copilot. Nie potrzeba tokenu/API key dla konta Copilot. Token do klonowania repozytoriów nadal ustaw jako sekret w **Render Dashboard → Environment**.
+Token Copilot można wpisać na stronie agenta zamiast logowania kodem urządzenia. Obsługiwane są tokeny OAuth (`gho_`), fine-grained PAT (`github_pat_`) z uprawnieniem konta **Copilot Requests** oraz token GitHub App (`ghu_`). CLI użyje tokenu przy kolejnych zadaniach. Token wpisany na stronie jest przechowywany wyłącznie w pamięci procesu i trzeba go podać ponownie po restarcie lub wdrożeniu; nie jest zwracany do przeglądarki ani zapisywany w logu. Można też nadal używać **Zaloguj Copilot przez GitHub**. `GITHUB_TOKEN` służy wyłącznie do klonowania repozytoriów i jest odrębnym tokenem.
 
 ## Wdrożenie na Render
 

@@ -33,7 +33,13 @@
     <section>
       <button id="copilot-login" type="button">Zaloguj Copilot przez GitHub</button>
       <span id="copilot-status" class="muted">Copilot nie jest zalogowany w tej instancji.</span>
-      <p class="muted">Kliknij przycisk, a następnie otwórz w logu podany adres i wpisz kod na koncie GitHub, które ma subskrypcję Copilot.</p>
+      <p class="muted">Kliknij przycisk, a następnie otwórz w logu podany adres i wpisz kod albo podaj token konta z dostępem do Copilot.</p>
+      <form id="copilot-token-form">
+        <label for="copilot-token">Token Copilot</label>
+        <input id="copilot-token" name="token" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="github_pat_… lub gho_…" maxlength="4096" required>
+        <button type="submit">Użyj tokenu</button>
+      </form>
+      <p class="muted">Fine-grained PAT musi mieć uprawnienie konta „Copilot Requests”. Utwórz go w <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">ustawieniach GitHub</a>. Token jest przechowywany tylko w pamięci tej instancji do restartu i nie jest wyświetlany ponownie.</p>
     </section>
     <section>
       <form id="clone-form">
@@ -66,8 +72,12 @@
       const promptButton = document.querySelector('#prompt-form button');
       const copilotLoginButton = document.querySelector("#copilot-login");
       const copilotStatus = document.querySelector("#copilot-status");
+      const copilotTokenForm = document.querySelector("#copilot-token-form");
+      const copilotTokenInput = document.querySelector("#copilot-token");
+      const copilotTokenButton = copilotTokenForm.querySelector("button");
       let socket;
       let copilotAuthenticated = false;
+      let copilotTokenConfigured = false;
 
       function appendLog(text) {
         log.textContent += text;
@@ -94,25 +104,42 @@
         socket.addEventListener("message", (event) => {
           const message = JSON.parse(event.data);
           if (message.type === "log") appendLog(message.text);
-          if (message.type === "error") appendLog(`\nBŁĄD: ${message.text}\n`);
+          if (message.type === "error") {
+            appendLog(`\nBŁĄD: ${message.text}\n`);
+            copilotTokenButton.disabled = false;
+          }
           if (message.type === "repo") addRepository(message);
           if (message.type === "ready") {
             message.repos.forEach(addRepository);
             copilotAuthenticated = message.copilotAuthenticated;
-            copilotStatus.textContent = copilotAuthenticated
+            copilotTokenConfigured = message.copilotTokenConfigured;
+            copilotStatus.textContent = copilotTokenConfigured
+              ? "Token Copilot jest ustawiony."
+              : copilotAuthenticated
               ? "Copilot jest zalogowany."
               : "Copilot nie jest zalogowany w tej instancji.";
           }
           if (message.type === "copilot-authenticated") {
             copilotAuthenticated = message.authenticated;
-            copilotStatus.textContent = copilotAuthenticated
+            copilotStatus.textContent = copilotTokenConfigured
+              ? "Token Copilot jest ustawiony."
+              : copilotAuthenticated
               ? "Copilot jest zalogowany."
               : "Copilot nie jest zalogowany.";
+          }
+          if (message.type === "copilot-token-saved") {
+            copilotTokenConfigured = true;
+            copilotAuthenticated = true;
+            copilotTokenInput.value = "";
+            copilotTokenButton.disabled = false;
+            copilotStatus.textContent = "Token Copilot jest ustawiony.";
           }
           if (message.type === "busy") {
             cloneButton.disabled = message.busy;
             promptButton.disabled = message.busy;
             copilotLoginButton.disabled = message.busy;
+            copilotTokenInput.disabled = message.busy;
+            copilotTokenButton.disabled = message.busy;
           }
         });
         socket.addEventListener("open", () => appendLog("Połączono z serwerem.\n"));
@@ -131,6 +158,16 @@
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
         copilotLoginButton.disabled = true;
         socket.send(JSON.stringify({ type: "copilot-login" }));
+      });
+
+      copilotTokenForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        copilotTokenButton.disabled = true;
+        socket.send(JSON.stringify({
+          type: "copilot-token",
+          token: copilotTokenInput.value
+        }));
       });
 
       document.querySelector("#prompt-form").addEventListener("submit", (event) => {

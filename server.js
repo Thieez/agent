@@ -10,6 +10,7 @@ const { parseRepository } = require("./repository");
 const PORT = Number(process.env.PORT || 3000);
 const APP_PASSWORD = process.env.APP_PASSWORD;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+let copilotToken = process.env.COPILOT_GITHUB_TOKEN || null;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_REPOSITORIES_PER_SESSION = 3;
 const MAX_PROMPT_LENGTH = 8000;
@@ -26,7 +27,7 @@ const app = express();
 const sessions = new Map();
 const repositories = new Map();
 let commandRunning = false;
-let copilotAuthenticated = false;
+let copilotAuthenticated = Boolean(copilotToken);
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "16kb" }));
@@ -147,6 +148,12 @@ function childEnvironment() {
   return env;
 }
 
+function copilotEnvironment() {
+  const env = childEnvironment();
+  if (copilotToken) env.COPILOT_GITHUB_TOKEN = copilotToken;
+  return env;
+}
+
 app.get("/healthz", (_req, res) => sendJson(res, 200, { ok: true }));
 
 app.get("/", (req, res) => {
@@ -229,6 +236,7 @@ webSockets.on("connection", (socket) => {
   safeSend(socket, {
     type: "ready",
     copilotAuthenticated,
+    copilotTokenConfigured: Boolean(copilotToken),
     repos: [...sessionRepos.entries()].map(([id, repo]) => ({ id, name: repo.name }))
   });
 
@@ -249,6 +257,24 @@ webSockets.on("connection", (socket) => {
     }
     if (commandRunning) {
       return safeSend(socket, { type: "error", text: "Inne zadanie jest już uruchomione." });
+    }
+
+    if (message.type === "copilot-token") {
+      const token = typeof message.token === "string" ? message.token.trim() : "";
+      if (
+        token.length > 4096 ||
+        !/^(?:gho_|github_pat_|ghu_)[A-Za-z0-9_]+$/.test(token)
+      ) {
+        return safeSend(socket, {
+          type: "error",
+          text: "Nieprawidłowy token. Użyj tokenu OAuth (gho_), fine-grained PAT (github_pat_) lub tokenu GitHub App (ghu_)."
+        });
+      }
+      copilotToken = token;
+      copilotAuthenticated = true;
+      safeSend(socket, { type: "copilot-token-saved" });
+      safeSend(socket, { type: "copilot-authenticated", authenticated: true });
+      return;
     }
 
     if (message.type === "copilot-login") {
@@ -339,7 +365,7 @@ webSockets.on("connection", (socket) => {
 
       commandRunning = true;
       safeSend(socket, { type: "busy", busy: true });
-      const env = childEnvironment();
+      const env = copilotEnvironment();
       safeSend(socket, { type: "log", text: "\nUruchamiam Copilot CLI...\n" });
       try {
         await runCommand(
