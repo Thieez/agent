@@ -1,0 +1,18 @@
+{
+  "terminalDependencies": [
+    {
+      "name": "GitHub Copilot CLI",
+      "installCommand": {
+        "linux": "npm install --no-save --package-lock=false @github/copilot@1.0.89",
+        "win32": "npm.cmd install --no-save --package-lock=false @github/copilot@1.0.89"
+      }
+    },
+    {
+      "name": "GitHub CLI",
+      "installCommand": {
+        "linux": "mkdir -p node_modules/.bin && curl -fsSL https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz | tar -xz --strip-components=2 -C node_modules/.bin && chmod +x node_modules/.bin/gh",
+        "win32": "$version = '2.102.0'; $root = Join-Path $env:TEMP 'gh-cli-install'; New-Item -ItemType Directory -Force $root, 'node_modules\\.bin' | Out-Null; Invoke-WebRequest -Uri \"https://github.com/cli/cli/releases/download/v$version/gh_$($version)_windows_amd64.zip\" -OutFile (Join-Path $root 'gh.zip'); Expand-Archive -LiteralPath (Join-Path $root 'gh.zip') -DestinationPath $root -Force; Copy-Item (Join-Path $root \"gh_$($version)_windows_amd64\\bin\\gh.exe\") 'node_modules\\.bin\\gh.exe' -Force; Remove-Item -LiteralPath $root -Recurse -Force"
+      }
+    }
+  ]
+}

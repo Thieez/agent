@@ -13,6 +13,8 @@ Tokeny GitHub ustaw jako sekrety środowiskowe usługi Render; aplikacja nie prz
 
 Utwórz jedną z maksymalnie 10 zakładek terminala, wybierając sklonowane repozytorium albo katalog aplikacji, aby uruchomić terminal bez klonowania. Opcjonalnie przypisz token Copilot. W terminalu z wybranym tokenem uruchom `copilot`; CLI używa tokenu przypisanego wyłącznie do tej zakładki, więc inne terminale mogą korzystać z innych kont. Każdy terminal obsługuje interaktywne polecenia, Ctrl+C oraz zmianę rozmiaru. Zamknięcie zakładki kończy jej proces. Terminale i repozytoria znikają po wygaśnięciu sesji, restarcie lub wdrożeniu aplikacji.
 
+Komendy instalacji narzędzi terminala są konfigurowane w `terminalDependencies` pliku `config.json` i uruchamiane przy każdym starcie przez `npm start`. Komendy są wykonywane w katalogu projektu; GitHub CLI ma osobną komendę dla Linux i Windows.
+
 Wybrany token Copilot jest dostępny jako `COPILOT_GITHUB_TOKEN` wewnątrz powłoki tego terminala, aby CLI mogło się nim uwierzytelnić. Ponieważ terminal udostępnia pełną powłokę, uruchamiane w nim polecenia mogą odczytać ten token. Pozostałe tokeny środowiskowe nie są przekazywane do terminala.
 
 ## Wdrożenie na Render
