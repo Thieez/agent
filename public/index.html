@@ -68,12 +68,15 @@
     <section>
       <form id="terminal-create-form">
         <label for="terminal-repository">Repozytorium dla nowej zakładki</label>
-        <div class="row">
-          <select id="terminal-repository" required>
-            <option value="">Najpierw sklonuj repozytorium</option>
-          </select>
-          <button id="terminal-create" type="submit">Nowy terminal</button>
-        </div>
+        <select id="terminal-repository" required>
+          <option value="">Najpierw sklonuj repozytorium</option>
+        </select>
+        <label for="terminal-copilot-token">Token Copilot dla tej zakładki</label>
+        <select id="terminal-copilot-token">
+          <option value="">Terminal bez tokenu Copilot</option>
+        </select>
+        <button id="terminal-create" type="submit">Nowy terminal</button>
+        <p class="muted">W terminalu z wybranym tokenem uruchom polecenie <code>copilot</code>. Każdy terminal dostaje tylko przypisany token. Polecenia uruchamiane w tym terminalu mogą odczytać token ze zmiennej środowiskowej.</p>
       </form>
     </section>
     <section>
@@ -102,6 +105,7 @@
       const credentialsElement = document.querySelector("#credentials");
       const createTerminalButton = document.querySelector("#terminal-create");
       const terminalRepository = document.querySelector("#terminal-repository");
+      const terminalCopilotToken = document.querySelector("#terminal-copilot-token");
       const terminalTabs = document.querySelector("#terminal-tabs");
       const terminalPanels = document.querySelector("#terminal-panels");
       const terminalEmpty = document.querySelector("#terminal-empty");
@@ -112,6 +116,7 @@
       let cloneBusy = false;
       let activeTerminalId = null;
       const repositories = new Map();
+      const copilotTokens = new Map();
       const terminalViews = new Map();
 
       function appendLog(text) {
@@ -167,7 +172,10 @@
           select.setAttribute("role", "tab");
           select.setAttribute("aria-controls", `terminal-panel-${view.id}`);
           select.setAttribute("aria-selected", String(view.id === activeTerminalId));
-          select.textContent = view.repoName;
+          const tokenLabel = view.copilotTokenName
+            ? ` · ${copilotTokens.get(view.copilotTokenName)?.login || view.copilotTokenName}`
+            : "";
+          select.textContent = `${view.repoName}${tokenLabel}`;
           select.addEventListener("click", () => activateTerminal(view.id));
           const close = document.createElement("button");
           close.type = "button";
@@ -223,6 +231,7 @@
         const view = {
           id: terminal.id,
           repoName: terminal.repoName,
+          copilotTokenName: terminal.copilotTokenName,
           exited: terminal.exited,
           panel,
           terminal: instance,
@@ -243,6 +252,7 @@
       function updateTerminal(terminal) {
         const view = terminalViews.get(terminal.id) || createTerminalView(terminal);
         view.repoName = terminal.repoName;
+        view.copilotTokenName = terminal.copilotTokenName;
         view.exited = terminal.exited;
         renderTerminalTabs();
       }
@@ -268,6 +278,18 @@
 
       function renderCredentials(credentials) {
         credentialsElement.replaceChildren();
+        copilotTokens.clear();
+        for (const credential of credentials) copilotTokens.set(credential.name, credential);
+        const previousToken = terminalCopilotToken.value;
+        terminalCopilotToken.replaceChildren(makeOption("", "Terminal bez tokenu Copilot"));
+        for (const credential of credentials) {
+          if (credential.status !== "valid") continue;
+          const account = credential.login || "konto GitHub";
+          terminalCopilotToken.append(makeOption(credential.name, `${account} · ${credential.name}`));
+        }
+        if (copilotTokens.has(previousToken) && copilotTokens.get(previousToken).status === "valid") {
+          terminalCopilotToken.value = previousToken;
+        }
         if (!credentials.length) {
           const empty = document.createElement("p");
           empty.className = "muted";
@@ -451,7 +473,8 @@
         event.preventDefault();
         if (!terminalRepository.value || !send({
           type: "terminal-create",
-          repoId: terminalRepository.value
+          repoId: terminalRepository.value,
+          copilotTokenName: terminalCopilotToken.value || null
         })) return;
         createTerminalButton.disabled = true;
       });

@@ -7,15 +7,17 @@ Prosta aplikacja webowa do klonowania repozytoriów GitHub i pracy w interaktywn
 - `APP_PASSWORD` — mocne hasło do strony, co najmniej 24 znaki.
 - `GITHUB_TOKEN` — opcjonalny token konta do klonowania repozytoriów. Możesz dodać wiele kont, ustawiając kolejne sekrety, np. `GITHUB_TOKEN_WORK` i `GITHUB_TOKEN_PERSONAL`. Bez tokenu aplikacja działa, ale klonowanie jest niedostępne.
 
-Tokeny GitHub ustaw jako sekrety środowiskowe usługi Render; aplikacja nie przyjmuje ich na stronie ani nie zwraca wartości do przeglądarki. Nazwy zgodne ze wzorcem `GITHUB_TOKEN` lub `GITHUB_TOKEN_NAZWA` są wykrywane automatycznie. Zalogowana strona pokazuje konto przypisane do każdego tokenu, jego zakresy OAuth (jeśli GitHub je udostępnia), dostępne repozytoria oraz uprawnienia do poszczególnych repozytoriów. Każde widoczne repozytorium można sklonować przy użyciu powiązanego z nim tokenu. GitHub nie udostępnia przez API pełnej listy uprawnień fine-grained tokenu — dostępne repozytoria i uprawnienia do nich są natomiast weryfikowane przez API. Tokeny nie są przekazywane do procesów terminala.
+Tokeny GitHub ustaw jako sekrety środowiskowe usługi Render; aplikacja nie przyjmuje ich na stronie ani nie zwraca wartości do przeglądarki. Nazwy zgodne ze wzorcem `GITHUB_TOKEN` lub `GITHUB_TOKEN_NAZWA` są wykrywane automatycznie. Zalogowana strona pokazuje konto przypisane do każdego tokenu, jego zakresy OAuth (jeśli GitHub je udostępnia), dostępne repozytoria oraz uprawnienia do poszczególnych repozytoriów. Każde widoczne repozytorium można sklonować przy użyciu powiązanego z nim tokenu. GitHub nie udostępnia przez API pełnej listy uprawnień fine-grained tokenu — dostępne repozytoria i uprawnienia do nich są natomiast weryfikowane przez API. Token klonowania nie jest przekazywany do procesów terminala; wyjątkiem jest wybrany osobno token Copilot opisany poniżej.
 
 ## Terminale
 
-Najpierw sklonuj repozytorium, a następnie utwórz jedną z maksymalnie 10 zakładek terminala, wybierając repozytorium. Każdy terminal uruchamia powłokę bezpośrednio w katalogu repozytorium; obsługuje interaktywne polecenia, Ctrl+C, zmianę rozmiaru oraz niezależne sesje. Zamknięcie zakładki kończy jej proces. Terminale i repozytoria znikają po wygaśnięciu sesji, restarcie lub wdrożeniu aplikacji.
+Najpierw sklonuj repozytorium, a następnie utwórz jedną z maksymalnie 10 zakładek terminala, wybierając repozytorium i opcjonalnie token Copilot. W terminalu z wybranym tokenem uruchom `copilot`; CLI używa tokenu przypisanego wyłącznie do tej zakładki, więc inne terminale mogą korzystać z innych kont. Każdy terminal uruchamia powłokę bezpośrednio w katalogu repozytorium i obsługuje interaktywne polecenia, Ctrl+C oraz zmianę rozmiaru. Zamknięcie zakładki kończy jej proces. Terminale i repozytoria znikają po wygaśnięciu sesji, restarcie lub wdrożeniu aplikacji.
+
+Wybrany token Copilot jest dostępny jako `COPILOT_GITHUB_TOKEN` wewnątrz powłoki tego terminala, aby CLI mogło się nim uwierzytelnić. Ponieważ terminal udostępnia pełną powłokę, uruchamiane w nim polecenia mogą odczytać ten token. Pozostałe tokeny środowiskowe nie są przekazywane do terminala.
 
 ## Wdrożenie na Render
 
-Utwórz Web Service z tego repozytorium albo użyj dołączonego `render.yaml`. Konfiguracja używa `npm ci` do budowania, `npm start` do uruchamiania i `/healthz` jako health check. `node-pty` wymaga natywnego modułu, który jest budowany w czasie instalacji zależności. W ustawieniach usługi Render dodaj wymagane sekrety.
+Utwórz Web Service z tego repozytorium albo użyj dołączonego `render.yaml`. Konfiguracja używa `npm ci` do budowania, `npm start` do uruchamiania i `/healthz` jako health check. `node-pty` wymaga natywnego modułu, który jest budowany w czasie instalacji zależności. W ustawieniach usługi Render dodaj `APP_PASSWORD` oraz sekrety GitHub/Copilot.
 
 ## Uruchomienie lokalne
 

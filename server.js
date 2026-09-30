@@ -7,6 +7,7 @@ const express = require("express");
 const { WebSocketServer, WebSocket } = require("ws");
 const pty = require("node-pty");
 const { parseRepository } = require("./repository");
+const { childEnvironment, terminalEnvironment } = require("./child-environment");
 
 const PORT = Number(process.env.PORT || 3000);
 const APP_PASSWORD = process.env.APP_PASSWORD;
@@ -106,6 +107,7 @@ function publicTerminal(terminal) {
     id: terminal.id,
     repoId: terminal.repoId,
     repoName: terminal.repoName,
+    copilotTokenName: terminal.copilotTokenName,
     output: terminal.output,
     exited: terminal.exited
   };
@@ -244,18 +246,6 @@ function runCommand(command, args, options, timeoutMs, onOutput) {
       else finish(null, code);
     });
   });
-}
-
-function childEnvironment() {
-  const env = { ...process.env };
-  delete env.APP_PASSWORD;
-  delete env.GH_TOKEN;
-  delete env.COPILOT_GITHUB_TOKEN;
-  delete env.COPILOT_HOME;
-  for (const name of Object.keys(env)) {
-    if (/^GITHUB_TOKEN(?:_[A-Z0-9_]+)?$/i.test(name)) delete env[name];
-  }
-  return env;
 }
 
 app.get("/healthz", (_req, res) => sendJson(res, 200, { ok: true }));
@@ -473,8 +463,17 @@ webSockets.on("connection", (socket) => {
 
     if (message.type === "terminal-create") {
       const repoId = typeof message.repoId === "string" ? message.repoId : "";
+      const copilotTokenName = typeof message.copilotTokenName === "string"
+        ? message.copilotTokenName
+        : "";
+      const copilotToken = copilotTokenName
+        ? githubTokens().find(({ name }) => name === copilotTokenName)
+        : null;
       const repo = sessionRepos.get(repoId);
       if (!repo) return safeSend(socket, { type: "error", text: "Najpierw sklonuj i wybierz repozytorium." });
+      if (copilotTokenName && !copilotToken) {
+        return safeSend(socket, { type: "error", text: "Nie znaleziono wybranego tokenu Copilot w konfiguracji środowiska." });
+      }
       if (sessionTerminals.size >= MAX_TERMINALS_PER_SESSION) {
         return safeSend(socket, { type: "error", text: `Można utworzyć maksymalnie ${MAX_TERMINALS_PER_SESSION} terminali.` });
       }
@@ -488,13 +487,14 @@ webSockets.on("connection", (socket) => {
           cols: 80,
           rows: 24,
           cwd: repo.path,
-          env: { ...childEnvironment(), TERM: "xterm-256color" }
+          env: { ...terminalEnvironment(copilotToken && copilotToken.value), TERM: "xterm-256color" }
         });
         terminal = {
           id: crypto.randomUUID(),
           ownerId: socket.session.id,
           repoId,
           repoName: repo.name,
+          copilotTokenName: copilotToken ? copilotToken.name : null,
           output: "",
           exited: false,
           pty: processTerminal

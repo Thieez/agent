@@ -2,7 +2,9 @@ const { after, test } = require("node:test");
 const assert = require("node:assert/strict");
 const { once } = require("node:events");
 const pty = require("node-pty");
+const path = require("node:path");
 const { WebSocket } = require("ws");
+const { terminalEnvironment } = require("./child-environment");
 
 process.env.PORT = "0";
 process.env.APP_PASSWORD = "server-test-password-with-more-than-24";
@@ -13,6 +15,26 @@ const server = require("./server");
 
 after(async () => {
   if (server.listening) await new Promise((resolve) => server.close(resolve));
+});
+
+test("terminal receives only its selected Copilot token and can find the CLI", () => {
+  const environment = terminalEnvironment("selected-copilot-token", {
+    APP_PASSWORD: "application-secret",
+    GITHUB_TOKEN: "clone-token",
+    GITHUB_TOKEN_WORK: "other-account-token",
+    GH_TOKEN: "legacy-token",
+    COPILOT_GITHUB_TOKEN: "default-copilot-token",
+    COPILOT_HOME: "copilot-home",
+    PATH: "existing-path"
+  });
+
+  assert.equal(environment.COPILOT_GITHUB_TOKEN, "selected-copilot-token");
+  assert.equal(environment.GITHUB_TOKEN, undefined);
+  assert.equal(environment.GITHUB_TOKEN_WORK, undefined);
+  assert.equal(environment.GH_TOKEN, undefined);
+  assert.equal(environment.APP_PASSWORD, undefined);
+  assert.equal(environment.PATH.split(path.delimiter)[0], path.join(__dirname, "node_modules", ".bin"));
+  assert.equal(environment.PATH.endsWith(`existing-path`), true);
 });
 
 test("terminal PTY runs interactive shell commands", {
