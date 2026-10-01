@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "node scripts/prepare-gup.js",
+    "postinstall": "node scripts/prepare-gup.js",
     "start": "node scripts/install-terminal-dependencies.js && node server.js",
     "test": "node --test"
   },
