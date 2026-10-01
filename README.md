@@ -16,7 +16,7 @@ npm run build
 npm start
 ```
 
-`npm run build` klonuje najnowszą wersję domyślnej gałęzi `Tomasz-Gziut/gup` do katalogu `gup` obok aplikacji. Jeśli repozytorium jest już sklonowane, build aktualizuje je przez `git pull --ff-only`. Jeżeli obok Repo Agent znajduje się plik `.env`, build kopiuje go do katalogu sklonowanego gup; na Linuxie ustawia uprawnienia pliku na `0600`. Katalog `gup` jest artefaktem buildu i nie jest częścią repozytorium Repo Agent.
+`npm run build` klonuje najnowszą wersję domyślnej gałęzi `Tomasz-Gziut/gup` do katalogu `gup` obok aplikacji. Jeśli repozytorium jest już sklonowane, build aktualizuje je przez `git pull --ff-only`. Repozytorium `gup` jest prywatne, dlatego build wymaga `GITHUB_TOKEN` z dostępem do odczytu jego zawartości. Token jest używany przez tymczasowy nagłówek Git, a nie umieszczany w URL-u ani wypisywany w logach. Można go ustawić jako sekret środowiskowy albo w pliku `.env` obok Repo Agent. Jeżeli ten plik istnieje, build kopiuje go do katalogu sklonowanego gup; na Linuxie ustawia uprawnienia pliku na `0600`. Katalog `gup` jest artefaktem buildu i nie jest częścią repozytorium Repo Agent.
 
 Można wskazać inny checkout zmienną `GUP_ROOT`; domyślnie aplikacja używa `gup` sklonowanego w trakcie buildu.
 
@@ -28,7 +28,7 @@ Terminal udostępnia pełną powłokę. Użytkownicy znający hasło aplikacji m
 
 ## Wdrożenie na Render
 
-Utwórz Web Service z repozytorium Repo Agent lub użyj dołączonego `render.yaml`. Build wykonuje `npm ci` i `npm run build`; start uruchamia `npm start`, a health check korzysta z `/healthz`. Ustaw `APP_PASSWORD` jako sekret środowiskowy. W razie potrzeby skonfiguruj tokeny GitHub jako zmienne środowiskowe używane przez gup. Linuxowy obraz usługi musi mieć PowerShell 7 (`pwsh`); bez niego terminal nie wystartuje.
+Utwórz Web Service z repozytorium Repo Agent lub użyj dołączonego `render.yaml`. Build wykonuje `npm ci` i `npm run build`; start uruchamia `npm start`, a health check korzysta z `/healthz`. Ustaw `APP_PASSWORD` oraz `GITHUB_TOKEN` jako sekrety środowiskowe; token musi mieć dostęp do prywatnego repozytorium `Tomasz-Gziut/gup`. Token środowiskowy jest również dostępny dla terminali gup. Linuxowy obraz usługi musi mieć PowerShell 7 (`pwsh`); bez niego terminal nie wystartuje.
 
 ## Testy
 

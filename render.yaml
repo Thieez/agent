@@ -11,3 +11,5 @@ services:
         value: 22
       - key: APP_PASSWORD
         sync: false
+      - key: GITHUB_TOKEN
+        sync: false
