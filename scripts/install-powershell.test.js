@@ -4,7 +4,8 @@ const {
   getReleaseAsset,
   installPowerShell,
   linuxAssetName,
-  releaseVersion
+  releaseVersion,
+  verifyPowerShell
 } = require("./install-powershell");
 
 test("selects the official stable PowerShell archive for the server architecture", async () => {
@@ -45,4 +46,22 @@ test("uses the Windows PowerShell installation without downloading a Linux archi
       throw new Error("Windows should not download PowerShell.");
     }
   });
+});
+
+test("verifies the installed PowerShell executable and reports launch failures", () => {
+  const version = verifyPowerShell("pwsh", (command, args) => {
+    assert.equal(command, "pwsh");
+    assert.deepEqual(args, [
+      "-NoLogo",
+      "-NoProfile",
+      "-Command",
+      "$PSVersionTable.PSVersion.ToString()"
+    ]);
+    return { status: 0, stdout: "7.6.6\n" };
+  });
+  assert.equal(version, "7.6.6");
+  assert.throws(
+    () => verifyPowerShell("pwsh", () => ({ status: 127, stdout: "" })),
+    /could not start/
+  );
 });

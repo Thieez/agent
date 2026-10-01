@@ -69,6 +69,7 @@ async function installPowerShell({
     if (!(await pathExists(targetLink))) {
       await symlink(path.relative(path.dirname(targetLink), targetExecutable), targetLink);
     }
+    verifyPowerShell(targetExecutable);
     console.log("PowerShell is already installed.");
     return;
   }
@@ -99,6 +100,7 @@ async function installPowerShell({
     if (!(await pathExists(targetLink))) {
       await symlink(path.relative(path.dirname(targetLink), targetExecutable), targetLink);
     }
+    verifyPowerShell(targetExecutable);
     console.log(`Installed PowerShell ${releaseVersion(asset.name)}.`);
   } catch (error) {
     await rm(targetRoot, { recursive: true, force: true });
@@ -106,6 +108,25 @@ async function installPowerShell({
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
+}
+
+function verifyPowerShell(executable, spawnImplementation = spawnSync) {
+  const result = spawnImplementation(executable, [
+    "-NoLogo",
+    "-NoProfile",
+    "-Command",
+    "$PSVersionTable.PSVersion.ToString()"
+  ], {
+    encoding: "utf8",
+    windowsHide: true
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`The installed PowerShell could not start (status ${result.status}).`);
+  }
+  const version = result.stdout.trim();
+  if (!version) throw new Error("The installed PowerShell did not report its version.");
+  return version;
 }
 
 function releaseVersion(assetName) {
@@ -120,4 +141,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { getReleaseAsset, installPowerShell, linuxAssetName, releaseVersion };
+module.exports = { getReleaseAsset, installPowerShell, linuxAssetName, releaseVersion, verifyPowerShell };

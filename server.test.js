@@ -10,6 +10,7 @@ process.env.PORT = "0";
 process.env.APP_PASSWORD = "server-test-password-with-more-than-24";
 process.env.GUP_ROOT = path.resolve(__dirname, "..", "..");
 const server = require("./server");
+const terminalDependencies = require("./config.json").terminalDependencies;
 
 after(async () => {
   if (server.listening) await new Promise((resolve) => server.close(resolve));
@@ -22,12 +23,17 @@ test("gup terminal keeps gup credentials but never receives the app password", (
     GITHUB_TOKEN_WORK: "work-token",
     PATH: "existing-path"
   });
-
   assert.equal(environment.APP_PASSWORD, undefined);
   assert.equal(environment.GITHUB_TOKEN, "gup-token");
   assert.equal(environment.GITHUB_TOKEN_WORK, "work-token");
   assert.equal(environment.PATH.split(path.delimiter)[0], path.join(__dirname, "node_modules", ".bin"));
   assert.equal(environment.PATH.endsWith("existing-path"), true);
+});
+
+test("PowerShell is installed after npm-based terminal dependencies", () => {
+  const dependencyNames = terminalDependencies.map((dependency) => dependency.name);
+  assert.equal(dependencyNames.at(-1), "PowerShell");
+  assert.ok(dependencyNames.indexOf("GitHub Copilot CLI") < dependencyNames.indexOf("PowerShell"));
 });
 
 test("login protects the terminal page and GitHub-specific API is gone", async () => {

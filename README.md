@@ -23,7 +23,8 @@ Można wskazać inny checkout zmienną `GUP_ROOT`; domyślnie aplikacja używa `
 ## Konfiguracja gup
 
 Repo Agent nie obsługuje repozytoriów ani tokenów GitHub samodzielnie. Terminal otrzymuje środowisko procesu (z wyjątkiem `APP_PASSWORD`), a `gup.ps1` korzysta z własnej konfiguracji: pliku `.env` przekazanego podczas buildu, zmiennych środowiskowych lub uwierzytelnienia GitHub CLI. Instalacja narzędzi terminala z `config.json` zapewnia CLI używane przez komendy gup.
-Komendy instalacji narzędzi terminala są konfigurowane w `terminalDependencies` pliku `config.json` i uruchamiane przy każdym starcie przez `npm start`. Na Linuxie Repo Agent pobiera najnowsze stabilne wydanie PowerShell z oficjalnego repozytorium PowerShell i uruchamia terminal z tej lokalnej instalacji. W Windows używa systemowego `powershell.exe`. GitHub CLI i Copilot CLI są instalowane jako narzędzia terminala.
+
+Komendy instalacji narzędzi terminala są konfigurowane w `terminalDependencies` pliku `config.json` i uruchamiane przy każdym starcie przez `npm start`. Na Linuxie Repo Agent pobiera najnowsze stabilne wydanie PowerShell z oficjalnego repozytorium PowerShell i uruchamia terminal z tej lokalnej instalacji. PowerShell jest instalowany po pozostałych narzędziach, aby instalacje npm nie usunęły jego plików z `node_modules`. W Windows używa systemowego `powershell.exe`. GitHub CLI i Copilot CLI są instalowane jako narzędzia terminala.
 
 Terminal udostępnia pełną powłokę. Użytkownicy znający hasło aplikacji mogą uruchamiać dowolne polecenia i odczytać sekrety przekazane terminalowi, w tym tokeny `GITHUB_TOKEN`. Ustawiaj silne hasło i używaj tej usługi tylko z zaufanymi użytkownikami.
 

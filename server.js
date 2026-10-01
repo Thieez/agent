@@ -222,13 +222,41 @@ webSockets.on("connection", (socket) => {
       if (sessionTerminals.size >= MAX_TERMINALS_PER_SESSION) {
         return safeSend(socket, { type: "error", text: `Można utworzyć maksymalnie ${MAX_TERMINALS_PER_SESSION} terminali.` });
       }
+      const gupScriptPath = path.join(GUP_ROOT, "gup.ps1");
       try {
-        const gupScriptPath = path.join(GUP_ROOT, "gup.ps1");
         await access(gupScriptPath);
-        const shell = process.platform === "win32"
-          ? "powershell.exe"
-          : (process.env.PWSH_PATH || path.join(__dirname, "node_modules", ".bin", "pwsh"));
-        if (process.platform !== "win32") await access(shell);
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          console.error(`Could not check gup.ps1 at ${gupScriptPath}: ${error.message}`);
+          return safeSend(socket, { type: "error", text: `Nie udało się sprawdzić skryptu gup.ps1: ${error.message}` });
+        }
+        console.error(`gup.ps1 was not found at ${gupScriptPath}.`);
+        return safeSend(socket, {
+          type: "error",
+          text: `Nie znaleziono skryptu gup.ps1 w ${GUP_ROOT}. Sprawdź checkout gup lub zmienną GUP_ROOT.`
+        });
+      }
+
+      const shell = process.platform === "win32"
+        ? "powershell.exe"
+        : (process.env.PWSH_PATH || path.join(__dirname, "node_modules", ".bin", "pwsh"));
+      if (process.platform !== "win32") {
+        try {
+          await access(shell);
+        } catch (error) {
+          if (error.code !== "ENOENT") {
+            console.error(`Could not check PowerShell at ${shell}: ${error.message}`);
+            return safeSend(socket, { type: "error", text: `Nie udało się sprawdzić PowerShell: ${error.message}` });
+          }
+          console.error(`PowerShell was not found at ${shell}.`);
+          return safeSend(socket, {
+            type: "error",
+            text: `Nie znaleziono PowerShell pod ścieżką ${shell}. Uruchom ponownie usługę, aby zainstalować PowerShell.`
+          });
+        }
+      }
+
+      try {
         const gupScript = gupScriptPath.replace(/'/g, "''");
         const processTerminal = pty.spawn(shell, [
           "-NoLogo",
@@ -262,7 +290,7 @@ webSockets.on("connection", (socket) => {
         return safeSend(socket, {
           type: "error",
           text: error.code === "ENOENT"
-            ? "Nie znaleziono PowerShell albo skryptu gup.ps1. Sprawdź instalację PowerShell i GUP_ROOT."
+            ? `Nie udało się uruchomić PowerShell z ${shell}. Uruchom ponownie usługę lub sprawdź instalację powłoki.`
             : `Nie udało się uruchomić terminala gup: ${error.message}`
         });
       }
