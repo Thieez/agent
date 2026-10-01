@@ -1,6 +1,6 @@
 const crypto = require("node:crypto");
 const path = require("node:path");
-const { access } = require("node:fs/promises");
+const { access, mkdir } = require("node:fs/promises");
 const express = require("express");
 const { WebSocketServer, WebSocket } = require("ws");
 const pty = require("node-pty");
@@ -258,6 +258,7 @@ webSockets.on("connection", (socket) => {
 
       try {
         const gupScript = gupScriptPath.replace(/'/g, "''");
+        await mkdir(path.join(GUP_ROOT, "repos"), { recursive: true });
         const processTerminal = pty.spawn(shell, [
           "-NoLogo",
           "-NoExit",

@@ -1,6 +1,8 @@
 const { after, test } = require("node:test");
 const assert = require("node:assert/strict");
 const { once } = require("node:events");
+const { existsSync, mkdtempSync, rmSync, writeFileSync } = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { WebSocket } = require("ws");
 const pty = require("node-pty");
@@ -8,12 +10,15 @@ const { terminalEnvironment } = require("./child-environment");
 
 process.env.PORT = "0";
 process.env.APP_PASSWORD = "server-test-password-with-more-than-24";
-process.env.GUP_ROOT = path.resolve(__dirname, "..", "..");
+const gupRoot = mkdtempSync(path.join(os.tmpdir(), "repo-agent-gup-test-"));
+writeFileSync(path.join(gupRoot, "gup.ps1"), "");
+process.env.GUP_ROOT = gupRoot;
 const server = require("./server");
 const terminalDependencies = require("./config.json").terminalDependencies;
 
 after(async () => {
   if (server.listening) await new Promise((resolve) => server.close(resolve));
+  rmSync(gupRoot, { recursive: true, force: true });
 });
 
 test("gup terminal keeps gup credentials but never receives the app password", () => {
@@ -21,11 +26,13 @@ test("gup terminal keeps gup credentials but never receives the app password", (
     APP_PASSWORD: "application-secret",
     GITHUB_TOKEN: "gup-token",
     GITHUB_TOKEN_WORK: "work-token",
+    GITHUB_TOKEN_1: "token GITHUB_TOKEN_WORK=github_pat_invalid\n",
     PATH: "existing-path"
   });
   assert.equal(environment.APP_PASSWORD, undefined);
   assert.equal(environment.GITHUB_TOKEN, "gup-token");
   assert.equal(environment.GITHUB_TOKEN_WORK, "work-token");
+  assert.equal(environment.GITHUB_TOKEN_1, undefined);
   assert.equal(environment.PATH.split(path.delimiter)[0], path.join(__dirname, "node_modules", ".bin"));
   assert.equal(environment.PATH.endsWith("existing-path"), true);
 });
@@ -111,7 +118,8 @@ test("terminal WebSocket creates gup terminals and rejects removed clone command
     const created = await nextMessage();
     assert.equal(created.type, "terminal-created");
     assert.match(created.terminal.name, /^gup \(\d+\)$/);
-    assert.equal(spawnOptions.options.cwd, process.env.GUP_ROOT);
+    assert.equal(spawnOptions.options.cwd, gupRoot);
+    assert.equal(existsSync(path.join(gupRoot, "repos")), true);
     assert.equal(spawnOptions.shell, process.platform === "win32"
       ? "powershell.exe"
       : path.join(__dirname, "node_modules", ".bin", "pwsh"));
