@@ -1,37 +1,37 @@
-# Repo Terminal
+# Repo Agent
 
-Prosta aplikacja webowa do klonowania repozytoriów GitHub i pracy w interaktywnych terminalach w przeglądarce. Każda zakładka ma własny proces PTY, działający katalog roboczy oraz historię wyjścia; wejście, wyjście i zmianę rozmiaru terminala obsługuje WebSocket.
+Repo Agent udostępnia chronione hasłem terminale przeglądarkowe uruchamiane bezpośrednio w repozytorium `gup`. Każdy terminal startuje PowerShell z załadowanym `gup.ps1`, więc polecenia i obsługa konfiguracji pochodzą z gup, a nie z osobnej logiki klonowania w aplikacji. Terminale używają xterm i WebSocket; limit to 10 terminali na sesję.
 
-## Wymagane sekrety
+## Wymagania
 
-- `APP_PASSWORD` — mocne hasło do strony, co najmniej 24 znaki.
-- `GITHUB_TOKEN` — opcjonalny token konta do klonowania repozytoriów. Możesz dodać wiele kont, ustawiając kolejne sekrety, np. `GITHUB_TOKEN_WORK` i `GITHUB_TOKEN_PERSONAL`. Bez tokenu aplikacja działa, ale klonowanie jest niedostępne.
+- Node.js 22 lub nowszy, Git i narzędzia do budowania natywnych modułów `node-pty`.
+- PowerShell: Windows PowerShell (`powershell.exe`) w Windows lub PowerShell 7 (`pwsh`) w Linux.
+- `APP_PASSWORD` — hasło aplikacji o długości co najmniej 24 znaków.
 
-Tokeny GitHub ustaw jako sekrety środowiskowe usługi Render; aplikacja nie przyjmuje ich na stronie ani nie zwraca wartości do przeglądarki. Nazwy zgodne ze wzorcem `GITHUB_TOKEN` lub `GITHUB_TOKEN_NAZWA` są wykrywane automatycznie. Zalogowana strona pokazuje listę tokenów i przypisanych do nich kont, a osobno jedną zbiorczą listę dostępnych repozytoriów z informacją, przez które tokeny są dostępne. Każde widoczne repozytorium można sklonować przy użyciu powiązanego z nim tokenu. GitHub nie udostępnia przez API pełnej listy uprawnień fine-grained tokenu — dostępne repozytoria i uprawnienia do nich są natomiast weryfikowane przez API. Token klonowania nie jest przekazywany do procesów terminala; wyjątkiem jest wybrany osobno token Copilot opisany poniżej.
-
-## Terminale
-
-Utwórz jedną z maksymalnie 10 zakładek terminala, wybierając sklonowane repozytorium albo katalog aplikacji, aby uruchomić terminal bez klonowania. Opcjonalnie przypisz token Copilot. W terminalu z wybranym tokenem uruchom `copilot`; CLI używa tokenu przypisanego wyłącznie do tej zakładki, więc inne terminale mogą korzystać z innych kont. Każdy terminal obsługuje interaktywne polecenia, Ctrl+C oraz zmianę rozmiaru. Zamknięcie zakładki kończy jej proces. Terminale i repozytoria znikają po wygaśnięciu sesji, restarcie lub wdrożeniu aplikacji.
-
-Komendy instalacji narzędzi terminala są konfigurowane w `terminalDependencies` pliku `config.json` i uruchamiane przy każdym starcie przez `npm start`. Komendy są wykonywane w katalogu projektu; GitHub CLI ma osobną komendę dla Linux i Windows.
-
-Wybrany token Copilot jest dostępny jako `COPILOT_GITHUB_TOKEN` wewnątrz powłoki tego terminala, aby CLI mogło się nim uwierzytelnić. Ponieważ terminal udostępnia pełną powłokę, uruchamiane w nim polecenia mogą odczytać ten token. Pozostałe tokeny środowiskowe nie są przekazywane do terminala.
-
-## Wdrożenie na Render
-
-Utwórz Web Service z tego repozytorium albo użyj dołączonego `render.yaml`. Konfiguracja używa `npm ci` do budowania, `npm start` do uruchamiania i `/healthz` jako health check. `node-pty` wymaga natywnego modułu, który jest budowany w czasie instalacji zależności. W ustawieniach usługi Render dodaj `APP_PASSWORD` oraz sekrety GitHub/Copilot.
-
-## Uruchomienie lokalne
-
-Wymagany Node.js 22 lub nowszy, Git oraz narzędzia do budowania natywnych modułów `node-pty`. Ustaw `APP_PASSWORD` i opcjonalnie jeden lub więcej tokenów `GITHUB_TOKEN` / `GITHUB_TOKEN_NAZWA`, a następnie uruchom:
+## Build
 
 ```sh
 npm ci
+npm run build
 npm start
 ```
 
-Aplikacja będzie dostępna pod `http://localhost:3000`.
+`npm run build` klonuje najnowszą wersję domyślnej gałęzi `Tomasz-Gziut/gup` do katalogu `gup` obok aplikacji. Jeśli repozytorium jest już sklonowane, build aktualizuje je przez `git pull --ff-only`. Jeżeli obok Repo Agent znajduje się plik `.env`, build kopiuje go do katalogu sklonowanego gup; na Linuxie ustawia uprawnienia pliku na `0600`. Katalog `gup` jest artefaktem buildu i nie jest częścią repozytorium Repo Agent.
 
-## Ważne
+Można wskazać inny checkout zmienną `GUP_ROOT`; domyślnie aplikacja używa `gup` sklonowanego w trakcie buildu.
 
-Terminal udostępnia pełną powłokę i pozwala wykonywać dowolne polecenia w sklonowanym repozytorium. Używaj wyłącznie z zaufanymi repozytoriami i chroń hasło aplikacji. Sekrety serwera klonującego nie są przekazywane do terminala. Limit wynosi trzy repozytoria na sesję; klonowanie jest pojedynczym zadaniem.
+## Konfiguracja gup
+
+Repo Agent nie obsługuje repozytoriów ani tokenów GitHub samodzielnie. Terminal otrzymuje środowisko procesu (z wyjątkiem `APP_PASSWORD`), a `gup.ps1` korzysta z własnej konfiguracji: pliku `.env` przekazanego podczas buildu, zmiennych środowiskowych lub uwierzytelnienia GitHub CLI. Instalacja narzędzi terminala z `config.json` zapewnia CLI używane przez komendy gup.
+
+Terminal udostępnia pełną powłokę. Użytkownicy znający hasło aplikacji mogą uruchamiać dowolne polecenia i odczytać sekrety przekazane terminalowi, w tym tokeny `GITHUB_TOKEN`. Ustawiaj silne hasło i używaj tej usługi tylko z zaufanymi użytkownikami.
+
+## Wdrożenie na Render
+
+Utwórz Web Service z repozytorium Repo Agent lub użyj dołączonego `render.yaml`. Build wykonuje `npm ci` i `npm run build`; start uruchamia `npm start`, a health check korzysta z `/healthz`. Ustaw `APP_PASSWORD` jako sekret środowiskowy. W razie potrzeby skonfiguruj tokeny GitHub jako zmienne środowiskowe używane przez gup. Linuxowy obraz usługi musi mieć PowerShell 7 (`pwsh`); bez niego terminal nie wystartuje.
+
+## Testy
+
+```sh
+npm test
+```

@@ -1,12 +1,13 @@
 {
-  "name": "copilot-repo-web",
+  "name": "gup-repo-agent",
   "version": "1.0.0",
   "private": true,
-  "description": "A small Render-hosted web UI for cloning GitHub repositories and using browser terminals.",
+  "description": "Password-protected browser terminals for the gup repository.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "build": "node scripts/prepare-gup.js",
     "start": "node scripts/install-terminal-dependencies.js && node server.js",
     "test": "node --test"
   },

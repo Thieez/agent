@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Repo Terminal</title>
+    <title>Repo Agent</title>
     <link rel="stylesheet" href="/vendor/xterm.css">
     <style>
       :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
@@ -11,14 +11,9 @@
       header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
       h1 { font-size: 1.5rem; }
       section { margin: 20px 0; padding: 20px; border: 1px solid #30363d; border-radius: 10px; background: #161b22; }
-      label { display: block; margin-bottom: 8px; font-weight: 600; }
-      input, select, button { box-sizing: border-box; padding: 10px 12px; border: 1px solid #30363d; border-radius: 7px; font: inherit; }
-      input, select { width: 100%; margin-bottom: 12px; background: #0d1117; color: inherit; }
-      button { background: #238636; color: white; cursor: pointer; font-weight: 600; }
+      button { padding: 10px 12px; border: 1px solid #30363d; border-radius: 7px; font: inherit; background: #238636; color: white; cursor: pointer; font-weight: 600; }
       button.secondary { background: #21262d; border-color: #484f58; }
       button:disabled { opacity: .55; cursor: wait; }
-      .row { display: flex; gap: 10px; align-items: end; }
-      .row > * { flex: 1; }
       .muted { color: #8b949e; font-size: .9rem; }
       .terminal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
       .terminal-actions { display: flex; gap: 8px; }
@@ -27,64 +22,31 @@
       .terminal-tab button { border-radius: 7px 7px 0 0; background: #21262d; }
       .terminal-tab button[aria-selected="true"] { background: #0d1117; border-bottom-color: #0d1117; }
       .terminal-tab .close-tab { border-radius: 0 7px 0 0; padding-left: 9px; padding-right: 9px; color: #8b949e; }
-      .terminal-panel { height: 52vh; min-height: 280px; padding: 12px; background: #010409; border: 1px solid #30363d; border-top: 0; }
+      .terminal-panel { height: 58vh; min-height: 280px; padding: 12px; background: #010409; border: 1px solid #30363d; border-top: 0; }
       .terminal-panel[hidden] { display: none; }
       .terminal-host { width: 100%; height: 100%; }
-      .credential-card { margin-top: 12px; padding: 14px; border: 1px solid #30363d; border-radius: 7px; background: #0d1117; }
-      .credential-heading { display: flex; justify-content: space-between; gap: 12px; }
-      .credential-details { margin-top: 8px; }
-      .credential-permissions { margin: 8px 0 0; padding-left: 20px; }
-      .repo-list { display: grid; gap: 8px; margin-top: 10px; }
-      .repo-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid #30363d; border-radius: 7px; }
-      .repo-name { overflow-wrap: anywhere; }
-      .repo-clone { flex: 0 0 auto; padding: 7px 10px; }
-      .credential-status { color: #3fb950; }
-      .credential-status.invalid { color: #ff7b72; }
-      .credential-status.unavailable { color: #d29922; }
       .empty { padding: 28px 8px; text-align: center; }
       @media (max-width: 600px) {
         body { margin-top: 20px; }
-        .row { align-items: stretch; flex-direction: column; }
         .terminal-toolbar { align-items: flex-start; flex-direction: column; }
       }
     </style>
   </head>
   <body>
     <header>
-      <h1>Repo Terminal</h1>
+      <h1>Repo Agent</h1>
       <button id="logout" class="secondary" type="button">Wyloguj</button>
     </header>
-    <p class="muted">Każda zakładka uruchamia osobny terminal w wybranym repozytorium. Sesje terminali działają do zamknięcia zakładki lub wygaśnięcia sesji. Używaj tylko zaufanych repozytoriów.</p>
+    <p class="muted">Każdy terminal otwiera PowerShell w repozytorium gup z załadowanym skryptem <code>gup.ps1</code>.</p>
     <section>
-      <h2>Tokeny środowiskowe</h2>
-      <p class="muted">Dodaj sekrety środowiskowe GITHUB_TOKEN, GITHUB_TOKEN_WORK, GITHUB_TOKEN_2 itd. Strona pokaże skonfigurowane tokeny i powiązane z nimi konta. Wartości kluczy nigdy nie są wysyłane do przeglądarki.</p>
-      <div id="credentials" aria-live="polite"><p class="muted">Sprawdzanie konfiguracji…</p></div>
-    </section>
-    <section>
-      <h2>Wszystkie dostępne repozytoria</h2>
-      <p class="muted">Lista repozytoriów dostępnych przez skonfigurowane tokeny środowiskowe. W jednej sesji możesz sklonować maksymalnie 3 repozytoria.</p>
-      <p id="repository-status" class="muted" role="alert" aria-live="polite"></p>
-      <div id="available-repositories" class="repo-list" aria-live="polite"></div>
-    </section>
-    <section>
-      <form id="terminal-create-form">
-        <label for="terminal-repository">Katalog startowy dla nowej zakładki</label>
-        <select id="terminal-repository" required>
-          <option value="__app_root__">Katalog aplikacji (bez klonowania repozytorium)</option>
-        </select>
-        <label for="terminal-copilot-token">Token Copilot dla tej zakładki</label>
-        <select id="terminal-copilot-token">
-          <option value="">Terminal bez tokenu Copilot</option>
-        </select>
-        <button id="terminal-create" type="submit">Nowy terminal</button>
-        <p class="muted">Możesz uruchomić terminal bez repozytorium w katalogu aplikacji. W terminalu z wybranym tokenem uruchom polecenie <code>copilot</code>. Każdy terminal dostaje tylko przypisany token. Polecenia uruchamiane w tym terminalu mogą odczytać token ze zmiennej środowiskowej.</p>
-      </form>
+      <button id="terminal-create" type="button">Utwórz terminal gup</button>
+      <p id="terminal-status" class="muted" role="status" aria-live="polite">Łączenie z serwerem…</p>
     </section>
     <section>
       <div class="terminal-toolbar">
         <div>
           <h2>Terminale</h2>
-          <span id="terminal-status" class="muted">Połączono z serwerem.</span>
+          <span id="active-terminal-status" class="muted">Brak otwartych terminali.</span>
         </div>
         <div class="terminal-actions">
           <button id="terminal-clear" class="secondary" type="button" disabled>Wyczyść ekran</button>
@@ -93,28 +55,21 @@
       </div>
       <div id="terminal-tabs" class="terminal-tabs" role="tablist" aria-label="Zakładki terminali"></div>
       <div id="terminal-panels"></div>
-      <p id="terminal-empty" class="muted empty">Utwórz terminal w katalogu aplikacji albo sklonowanym repozytorium.</p>
+      <p id="terminal-empty" class="muted empty">Utwórz terminal, aby rozpocząć pracę z gup.</p>
     </section>
     <script src="/vendor/xterm.js"></script>
     <script src="/vendor/addon-fit.js"></script>
     <script>
-      const credentialsElement = document.querySelector("#credentials");
-      const availableRepositoriesElement = document.querySelector("#available-repositories");
-      const repositoryStatus = document.querySelector("#repository-status");
       const createTerminalButton = document.querySelector("#terminal-create");
-      const terminalRepository = document.querySelector("#terminal-repository");
-      const terminalCopilotToken = document.querySelector("#terminal-copilot-token");
       const terminalTabs = document.querySelector("#terminal-tabs");
       const terminalPanels = document.querySelector("#terminal-panels");
       const terminalEmpty = document.querySelector("#terminal-empty");
       const terminalStatus = document.querySelector("#terminal-status");
+      const activeTerminalStatus = document.querySelector("#active-terminal-status");
       const clearTerminalButton = document.querySelector("#terminal-clear");
       const interruptTerminalButton = document.querySelector("#terminal-interrupt");
       let socket;
-      let cloneBusy = false;
       let activeTerminalId = null;
-      const repositories = new Map();
-      const copilotTokens = new Map();
       const terminalViews = new Map();
 
       function send(message) {
@@ -123,25 +78,6 @@
           return true;
         }
         return false;
-      }
-
-      function makeOption(value, text) {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = text;
-        return option;
-      }
-
-      function updateRepositorySelector() {
-        const previousRepo = terminalRepository.value;
-        terminalRepository.replaceChildren(
-          makeOption("__app_root__", "Katalog aplikacji (bez klonowania repozytorium)"),
-          makeOption("", repositories.size ? "Wybierz repozytorium" : "Lub wybierz katalog aplikacji")
-        );
-        for (const [id, repo] of repositories) {
-          terminalRepository.append(makeOption(id, repo.name));
-        }
-        if (repositories.has(previousRepo)) terminalRepository.value = previousRepo;
       }
 
       function fitTerminal(view) {
@@ -166,16 +102,13 @@
           select.setAttribute("role", "tab");
           select.setAttribute("aria-controls", `terminal-panel-${view.id}`);
           select.setAttribute("aria-selected", String(view.id === activeTerminalId));
-          const tokenLabel = view.copilotTokenName
-            ? ` · ${copilotTokens.get(view.copilotTokenName)?.login || view.copilotTokenName}`
-            : "";
-          select.textContent = `${view.repoName}${tokenLabel}`;
+          select.textContent = view.name;
           select.addEventListener("click", () => activateTerminal(view.id));
           const close = document.createElement("button");
           close.type = "button";
           close.className = "close-tab";
           close.textContent = "×";
-          close.setAttribute("aria-label", `Zamknij terminal ${view.repoName}`);
+          close.setAttribute("aria-label", `Zamknij ${view.name}`);
           close.addEventListener("click", () => send({ type: "terminal-close", terminalId: view.id }));
           tab.append(select, close);
           terminalTabs.append(tab);
@@ -185,8 +118,8 @@
         terminalEmpty.hidden = terminalViews.size > 0;
         clearTerminalButton.disabled = !activeView || activeView.exited;
         interruptTerminalButton.disabled = !activeView || activeView.exited;
-        terminalStatus.textContent = activeView
-          ? (activeView.exited ? "Proces terminala zakończony." : `Połączono · ${activeView.repoName}`)
+        activeTerminalStatus.textContent = activeView
+          ? (activeView.exited ? "Proces terminala zakończony." : `Połączono · ${activeView.name}`)
           : "Brak otwartych terminali.";
       }
 
@@ -224,8 +157,7 @@
         instance.open(host);
         const view = {
           id: terminal.id,
-          repoName: terminal.repoName,
-          copilotTokenName: terminal.copilotTokenName,
+          name: terminal.name,
           exited: terminal.exited,
           panel,
           terminal: instance,
@@ -245,8 +177,7 @@
 
       function updateTerminal(terminal) {
         const view = terminalViews.get(terminal.id) || createTerminalView(terminal);
-        view.repoName = terminal.repoName;
-        view.copilotTokenName = terminal.copilotTokenName;
+        view.name = terminal.name;
         view.exited = terminal.exited;
         renderTerminalTabs();
       }
@@ -265,181 +196,23 @@
         if (activeView) requestAnimationFrame(() => fitTerminal(activeView));
       }
 
-      function addRepository(repo) {
-        repositories.set(repo.id, repo);
-        updateRepositorySelector();
-      }
-
-      function renderAvailableRepositories(credentials) {
-        availableRepositoriesElement.replaceChildren();
-        const available = new Map();
-        for (const credential of credentials) {
-          for (const repo of credential.repos) {
-            const key = repo.fullName.toLocaleLowerCase("en-US");
-            let entry = available.get(key);
-            if (!entry) {
-              entry = { repo, credentials: [] };
-              available.set(key, entry);
-            }
-            entry.credentials.push(credential);
-          }
-        }
-
-        if (!available.size) {
-          const empty = document.createElement("p");
-          empty.className = "muted";
-          empty.textContent = "Nie znaleziono repozytoriów dostępnych przez skonfigurowane tokeny.";
-          availableRepositoriesElement.append(empty);
-          return;
-        }
-
-        const repositoryPermissionLabels = {
-          admin: "administracja",
-          maintain: "utrzymanie",
-          push: "zapis",
-          triage: "zarządzanie zgłoszeniami",
-          pull: "odczyt"
-        };
-        for (const { repo, credentials: repoCredentials } of [...available.values()]
-          .sort((left, right) => left.repo.fullName.localeCompare(right.repo.fullName))) {
-          const repoRow = document.createElement("div");
-          repoRow.className = "repo-item";
-          const repoDetails = document.createElement("div");
-          repoDetails.className = "repo-name";
-          const permissions = [...new Set(repoCredentials.flatMap((credential) =>
-            credential.repos.find((item) => item.fullName.toLocaleLowerCase("en-US") === repo.fullName.toLocaleLowerCase("en-US"))?.permissions || []
-          ))];
-          const repoPermissions = permissions.length
-            ? ` · ${permissions.map((permission) => repositoryPermissionLabels[permission] || permission).join(", ")}`
-            : "";
-          const tokenNames = [...new Set(repoCredentials.map((credential) => credential.name))];
-          const access = document.createElement("div");
-          access.className = "muted";
-          access.textContent = `Dostęp przez: ${tokenNames.join(", ")}`;
-          repoDetails.textContent = `${repo.fullName} · ${repo.private ? "prywatne" : "publiczne"}${repoPermissions}`;
-          repoDetails.append(access);
-
-          const clone = document.createElement("button");
-          clone.type = "button";
-          clone.className = "repo-clone";
-          clone.textContent = "Klonuj";
-          const usableCredential = repoCredentials.find((credential) =>
-            credential.status === "valid" && !credential.reposMessage
-          );
-          clone.disabled = cloneBusy || !usableCredential;
-          if (usableCredential) clone.dataset.tokenId = usableCredential.name;
-          clone.dataset.repo = repo.fullName;
-          repoRow.append(repoDetails, clone);
-          availableRepositoriesElement.append(repoRow);
-        }
-      }
-
-      function renderCredentials(credentials) {
-        credentialsElement.replaceChildren();
-        renderAvailableRepositories(credentials);
-        copilotTokens.clear();
-        for (const credential of credentials) copilotTokens.set(credential.name, credential);
-        const previousToken = terminalCopilotToken.value;
-        terminalCopilotToken.replaceChildren(makeOption("", "Terminal bez tokenu Copilot"));
-        for (const credential of credentials) {
-          if (credential.status !== "valid") continue;
-          const account = credential.login || "konto GitHub";
-          terminalCopilotToken.append(makeOption(credential.name, `${account} · ${credential.name}`));
-        }
-        if (copilotTokens.has(previousToken) && copilotTokens.get(previousToken).status === "valid") {
-          terminalCopilotToken.value = previousToken;
-        }
-        if (!credentials.length) {
-          const empty = document.createElement("p");
-          empty.className = "muted";
-          empty.textContent = "Nie skonfigurowano tokenów. Dodaj GITHUB_TOKEN lub GITHUB_TOKEN_NAZWA w ustawieniach środowiska Render.";
-          credentialsElement.append(empty);
-          return;
-        }
-        for (const credential of credentials) {
-          const card = document.createElement("article");
-          card.className = "credential-card";
-          const heading = document.createElement("div");
-          heading.className = "credential-heading";
-          const name = document.createElement("strong");
-          name.textContent = credential.name;
-          const status = document.createElement("span");
-          status.className = `credential-status ${credential.status}`;
-          status.textContent = {
-            valid: "Dostępny",
-            invalid: "Nieprawidłowy",
-            unavailable: "Niezweryfikowany",
-            not_configured: "Brak w konfiguracji"
-          }[credential.status] || "Nieznany status";
-          heading.append(name, status);
-
-          const details = document.createElement("div");
-          details.className = "credential-details muted";
-          details.textContent = `${credential.purpose}${credential.login ? ` · GitHub: ${credential.login}` : ""}${credential.tokenType ? ` · ${credential.tokenType}` : ""}`;
-          card.append(heading, details);
-
-          if (credential.permissions.length) {
-            const permissions = document.createElement("ul");
-            permissions.className = "credential-permissions muted";
-            for (const permission of credential.permissions) {
-              const item = document.createElement("li");
-              item.textContent = `${permission.name} — ${permission.description}`;
-              permissions.append(item);
-            }
-            card.append(permissions);
-          }
-
-          const note = document.createElement("p");
-          note.className = "muted";
-          note.textContent = credential.permissionMessage;
-          card.append(note);
-
-          if (credential.reposMessage) {
-            const repoError = document.createElement("p");
-            repoError.className = "muted";
-            repoError.textContent = `Repozytoria: ${credential.reposMessage}`;
-            card.append(repoError);
-          }
-          credentialsElement.append(card);
-        }
-      }
-
-      function setCloneBusy(busy) {
-        cloneBusy = busy;
-        for (const button of availableRepositoriesElement.querySelectorAll(".repo-clone")) {
-          button.disabled = busy || !button.dataset.tokenId;
-        }
-      }
-
       async function connect() {
         const session = await fetch("/api/session");
         if (!session.ok) return location.assign("/login");
-        const credentialResponse = await fetch("/api/credentials");
-        if (!credentialResponse.ok) {
-          credentialsElement.textContent = "Nie udało się pobrać informacji o tokenach środowiskowych.";
-        } else {
-          const credentialData = await credentialResponse.json();
-          renderCredentials(credentialData.credentials);
-        }
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         socket = new WebSocket(`${protocol}//${location.host}/ws`);
+        socket.addEventListener("open", () => {
+          terminalStatus.textContent = "Połączono z serwerem.";
+          createTerminalButton.disabled = false;
+        });
         socket.addEventListener("message", (event) => {
           const message = JSON.parse(event.data);
           if (message.type === "error") {
-            repositoryStatus.textContent = message.text;
-            setCloneBusy(false);
+            terminalStatus.textContent = message.text;
             createTerminalButton.disabled = false;
           }
-          if (message.type === "repo") addRepository(message);
           if (message.type === "ready") {
-            repositories.clear();
-            for (const repo of message.repos) repositories.set(repo.id, repo);
-            updateRepositorySelector();
             for (const terminal of message.terminals) updateTerminal(terminal);
-            if (!activeTerminalId && terminalViews.size) {
-              activeTerminalId = terminalViews.keys().next().value;
-              renderTerminalTabs();
-            }
           }
           if (message.type === "terminal-created") {
             createTerminalButton.disabled = false;
@@ -463,54 +236,37 @@
             const view = terminalViews.get(message.terminalId);
             if (view) view.terminal.clear();
           }
-          if (message.type === "clone-state") setCloneBusy(message.busy);
         });
         socket.addEventListener("close", () => {
           terminalStatus.textContent = "Połączenie z serwerem zostało zamknięte.";
-          repositoryStatus.textContent = "Połączenie z serwerem zostało zamknięte.";
+          createTerminalButton.disabled = true;
         });
         socket.addEventListener("error", () => {
-          repositoryStatus.textContent = "Błąd połączenia WebSocket.";
+          terminalStatus.textContent = "Błąd połączenia WebSocket.";
         });
       }
 
-      availableRepositoriesElement.addEventListener("click", (event) => {
-        const button = event.target.closest(".repo-clone");
-        if (!button || button.disabled || !send({
-          type: "clone",
-          tokenId: button.dataset.tokenId,
-          repo: button.dataset.repo
-        })) return;
-        repositoryStatus.textContent = "";
-        setCloneBusy(true);
+      createTerminalButton.addEventListener("click", () => {
+        if (send({ type: "terminal-create" })) {
+          createTerminalButton.disabled = true;
+          terminalStatus.textContent = "Uruchamianie terminala gup…";
+        }
       });
-
-      document.querySelector("#terminal-create-form").addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (!terminalRepository.value || !send({
-          type: "terminal-create",
-          repoId: terminalRepository.value,
-          copilotTokenName: terminalCopilotToken.value || null
-        })) return;
-        createTerminalButton.disabled = true;
-      });
-
       clearTerminalButton.addEventListener("click", () => {
-        const view = terminalViews.get(activeTerminalId);
-        if (view) send({ type: "terminal-clear", terminalId: view.id });
+        if (activeTerminalId) send({ type: "terminal-clear", terminalId: activeTerminalId });
       });
-
       interruptTerminalButton.addEventListener("click", () => {
-        const view = terminalViews.get(activeTerminalId);
-        if (view) send({ type: "terminal-signal", terminalId: view.id });
+        if (activeTerminalId) send({ type: "terminal-signal", terminalId: activeTerminalId });
       });
-
       document.querySelector("#logout").addEventListener("click", async () => {
         await fetch("/api/logout", { method: "POST" });
         location.assign("/login");
       });
-
-      connect().catch(() => location.assign("/login"));
+      window.addEventListener("resize", () => fitTerminal(terminalViews.get(activeTerminalId)));
+      createTerminalButton.disabled = true;
+      connect().catch((error) => {
+        terminalStatus.textContent = `Nie udało się połączyć z serwerem: ${error.message}`;
+      });
     </script>
   </body>
 </html>

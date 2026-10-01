@@ -1,15 +1,13 @@
 services:
   - type: web
-    name: copilot-repo-web
+    name: gup-repo-agent
     runtime: node
     plan: free
-    buildCommand: npm ci
+    buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
     envVars:
       - key: NODE_VERSION
         value: 22
       - key: APP_PASSWORD
-        sync: false
-      - key: GITHUB_TOKEN
         sync: false
