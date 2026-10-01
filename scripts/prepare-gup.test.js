@@ -7,7 +7,8 @@ const {
   copyAgentEnvironment,
   findGitHubToken,
   gitEnvironment,
-  parseEnvironmentFile
+  parseEnvironmentFile,
+  verifyGitHubAccess
 } = require("./prepare-gup");
 
 test("copies the agent .env to gup and removes stale copies", async () => {
@@ -32,6 +33,30 @@ test("copies the agent .env to gup and removes stale copies", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("reports missing private-repository access without disclosing credentials", async () => {
+  const secret = "inaccessible-token";
+  await assert.rejects(
+    verifyGitHubAccess(secret, async (url, options) => {
+      assert.equal(url, "https://api.github.com/repos/Tomasz-Gziut/gup");
+      assert.equal(options.headers.Authorization, `Bearer ${secret}`);
+      return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+    }),
+    (error) => {
+      assert.match(error.message, /GITHUB_TOKEN/);
+      assert.match(error.message, /Contents: read/);
+      assert.equal(error.message.includes(secret), false);
+      return true;
+    }
+  );
+});
+
+test("accepts a token with access to the expected private repository", async () => {
+  await verifyGitHubAccess("authorized-token", async () => new Response(
+    JSON.stringify({ full_name: "Tomasz-Gziut/gup" }),
+    { status: 200 }
+  ));
 });
 
 test("reads GitHub credentials and adds authentication without exposing the token", async () => {

@@ -5,6 +5,7 @@ const path = require("node:path");
 const agentRoot = path.resolve(__dirname, "..");
 const gupRoot = path.join(agentRoot, "gup");
 const gupRepository = "https://github.com/Tomasz-Gziut/gup.git";
+const gupApiEndpoint = "https://api.github.com/repos/Tomasz-Gziut/gup";
 
 async function pathExists(target) {
   try {
@@ -68,6 +69,40 @@ function gitEnvironment(token, environment = process.env) {
   return env;
 }
 
+async function verifyGitHubAccess(token, fetchImplementation = fetch) {
+  let response;
+  try {
+    response = await fetchImplementation(gupApiEndpoint, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+  } catch (error) {
+    throw new Error(`Could not verify access to the private gup repository: ${error.message}`);
+  }
+
+  if (response.status === 401) {
+    throw new Error("GITHUB_TOKEN was rejected by GitHub. Replace it with a valid token that can read Tomasz-Gziut/gup.");
+  }
+  if (response.status === 403) {
+    throw new Error("GitHub denied access to Tomasz-Gziut/gup. Check the token's repository permissions and organization SSO authorization.");
+  }
+  if (response.status === 404) {
+    throw new Error("GitHub returned 404 for the private Tomasz-Gziut/gup repository. Set GITHUB_TOKEN to a token authorized to access this repository, with Contents: read permission.");
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub could not verify access to Tomasz-Gziut/gup (HTTP ${response.status}).`);
+  }
+
+  const repository = await response.json();
+  if (repository.full_name?.toLowerCase() !== "tomasz-gziut/gup") {
+    throw new Error("GitHub returned an unexpected repository while verifying access to Tomasz-Gziut/gup.");
+  }
+}
+
 function runGit(args, cwd = agentRoot, token) {
   const result = spawnSync("git", args, {
     cwd,
@@ -100,6 +135,7 @@ async function prepareGup(root = agentRoot) {
       "The gup repository is private. Set GITHUB_TOKEN in the Repo Agent .env file or as a Render environment secret with read access to Tomasz-Gziut/gup."
     );
   }
+  await verifyGitHubAccess(token);
   if (await pathExists(path.join(gupRoot, ".git"))) {
     runGit(["-C", gupRoot, "pull", "--ff-only"], root, token);
   } else if (await pathExists(gupRoot)) {
@@ -125,5 +161,6 @@ module.exports = {
   findGitHubToken,
   gitEnvironment,
   parseEnvironmentFile,
-  prepareGup
+  prepareGup,
+  verifyGitHubAccess
 };
