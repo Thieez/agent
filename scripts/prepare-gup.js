@@ -33,7 +33,7 @@ function parseEnvironmentFile(content) {
   return values;
 }
 
-async function findGitHubToken(root, environment = process.env) {
+async function findGitHubTokens(root, environment = process.env) {
   const filePath = path.join(root, ".env");
   let fileValues = {};
   try {
@@ -52,12 +52,11 @@ async function findGitHubToken(root, environment = process.env) {
       values[name] = value.trim();
     }
   }
-  const tokenName = Object.keys(values).sort((left, right) => {
+  return Object.entries(values).sort(([left], [right]) => {
     if (left.toUpperCase() === "GITHUB_TOKEN") return -1;
     if (right.toUpperCase() === "GITHUB_TOKEN") return 1;
     return left.localeCompare(right);
-  })[0];
-  return tokenName ? values[tokenName] : null;
+  }).map(([name, value]) => ({ name, value }));
 }
 
 function gitEnvironment(token, environment = process.env) {
@@ -85,13 +84,19 @@ async function verifyGitHubAccess(token, fetchImplementation = fetch) {
   }
 
   if (response.status === 401) {
-    throw new Error("GITHUB_TOKEN was rejected by GitHub. Replace it with a valid token that can read Tomasz-Gziut/gup.");
+    const error = new Error("GitHub rejected this token.");
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 403) {
-    throw new Error("GitHub denied access to Tomasz-Gziut/gup. Check the token's repository permissions and organization SSO authorization.");
+    const error = new Error("GitHub denied access to the repository.");
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 404) {
-    throw new Error("GitHub returned 404 for the private Tomasz-Gziut/gup repository. Set GITHUB_TOKEN to a token authorized to access this repository, with Contents: read permission.");
+    const error = new Error("The private repository was not found for this token.");
+    error.status = response.status;
+    throw error;
   }
   if (!response.ok) {
     throw new Error(`GitHub could not verify access to Tomasz-Gziut/gup (HTTP ${response.status}).`);
@@ -101,6 +106,27 @@ async function verifyGitHubAccess(token, fetchImplementation = fetch) {
   if (repository.full_name?.toLowerCase() !== "tomasz-gziut/gup") {
     throw new Error("GitHub returned an unexpected repository while verifying access to Tomasz-Gziut/gup.");
   }
+}
+
+async function selectGitHubToken(tokens, verify = verifyGitHubAccess) {
+  if (!tokens.length) {
+    throw new Error(
+      "The gup repository is private. Set GITHUB_TOKEN or GITHUB_TOKEN_<alias> in the Repo Agent environment or .env file."
+    );
+  }
+  const rejected = [];
+  for (const token of tokens) {
+    try {
+      await verify(token.value);
+      return token;
+    } catch (error) {
+      if (![401, 403, 404].includes(error.status)) throw error;
+      rejected.push(token.name);
+    }
+  }
+  throw new Error(
+    `None of the configured GitHub tokens can read the private Tomasz-Gziut/gup repository (checked ${rejected.join(", ")}). Set a token with Contents: read permission and organization SSO access if required.`
+  );
 }
 
 function runGit(args, cwd = agentRoot, token) {
@@ -129,19 +155,14 @@ async function copyAgentEnvironment(sourceRoot, targetRoot) {
 
 async function prepareGup(root = agentRoot) {
   const gupRoot = path.join(root, "gup");
-  const token = await findGitHubToken(root);
-  if (!token) {
-    throw new Error(
-      "The gup repository is private. Set GITHUB_TOKEN in the Repo Agent .env file or as a Render environment secret with read access to Tomasz-Gziut/gup."
-    );
-  }
-  await verifyGitHubAccess(token);
+  const tokens = await findGitHubTokens(root);
+  const token = await selectGitHubToken(tokens);
   if (await pathExists(path.join(gupRoot, ".git"))) {
-    runGit(["-C", gupRoot, "pull", "--ff-only"], root, token);
+    runGit(["-C", gupRoot, "pull", "--ff-only"], root, token.value);
   } else if (await pathExists(gupRoot)) {
     throw new Error(`${gupRoot} exists but is not a Git repository.`);
   } else {
-    runGit(["clone", "--depth", "1", gupRepository, gupRoot], root, token);
+    runGit(["clone", "--depth", "1", gupRepository, gupRoot], root, token.value);
   }
 
   if (await copyAgentEnvironment(root, gupRoot)) {
@@ -158,9 +179,10 @@ if (require.main === module) {
 
 module.exports = {
   copyAgentEnvironment,
-  findGitHubToken,
+  findGitHubTokens,
   gitEnvironment,
   parseEnvironmentFile,
   prepareGup,
+  selectGitHubToken,
   verifyGitHubAccess
 };

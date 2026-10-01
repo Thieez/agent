@@ -5,9 +5,10 @@ const os = require("node:os");
 const path = require("node:path");
 const {
   copyAgentEnvironment,
-  findGitHubToken,
+  findGitHubTokens,
   gitEnvironment,
   parseEnvironmentFile,
+  selectGitHubToken,
   verifyGitHubAccess
 } = require("./prepare-gup");
 
@@ -35,6 +36,37 @@ test("copies the agent .env to gup and removes stale copies", async () => {
   }
 });
 
+test("selects the first token with access after rejecting earlier aliases", async () => {
+  const attempted = [];
+  const selected = await selectGitHubToken([
+    { name: "GITHUB_TOKEN", value: "invalid" },
+    { name: "GITHUB_TOKEN_WORK", value: "valid" }
+  ], async (token) => {
+    attempted.push(token);
+    if (token === "invalid") {
+      const error = new Error("not authorized");
+      error.status = 404;
+      throw error;
+    }
+  });
+  assert.deepEqual(attempted, ["invalid", "valid"]);
+  assert.deepEqual(selected, { name: "GITHUB_TOKEN_WORK", value: "valid" });
+});
+
+test("reports which token aliases could not read the private repository", async () => {
+  await assert.rejects(
+    selectGitHubToken([
+      { name: "GITHUB_TOKEN", value: "bad-one" },
+      { name: "GITHUB_TOKEN_WORK", value: "bad-two" }
+    ], async () => {
+      const error = new Error("not authorized");
+      error.status = 404;
+      throw error;
+    }),
+    /checked GITHUB_TOKEN, GITHUB_TOKEN_WORK/
+  );
+});
+
 test("reports missing private-repository access without disclosing credentials", async () => {
   const secret = "inaccessible-token";
   await assert.rejects(
@@ -44,8 +76,7 @@ test("reports missing private-repository access without disclosing credentials",
       return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
     }),
     (error) => {
-      assert.match(error.message, /GITHUB_TOKEN/);
-      assert.match(error.message, /Contents: read/);
+      assert.match(error.message, /private repository/);
       assert.equal(error.message.includes(secret), false);
       return true;
     }
@@ -71,11 +102,17 @@ test("reads GitHub credentials and adds authentication without exposing the toke
     assert.deepEqual(parseEnvironmentFile("# comment\nGITHUB_TOKEN='quoted'\nOTHER=value"), {
       GITHUB_TOKEN: "quoted"
     });
-    assert.equal(await findGitHubToken(root, {
+    assert.deepEqual(await findGitHubTokens(root, {
       GITHUB_TOKEN: "runtime-token",
       GITHUB_TOKEN_WORK: "another-runtime-token"
-    }), "runtime-token");
-    assert.equal(await findGitHubToken(root, { GITHUB_TOKEN: "" }), secret);
+    }), [
+      { name: "GITHUB_TOKEN", value: "runtime-token" },
+      { name: "GITHUB_TOKEN_WORK", value: "another-runtime-token" }
+    ]);
+    assert.deepEqual(await findGitHubTokens(root, { GITHUB_TOKEN: "" }), [
+      { name: "GITHUB_TOKEN", value: secret },
+      { name: "GITHUB_TOKEN_WORK", value: "work-file-token" }
+    ]);
 
     const environment = gitEnvironment(secret, { PATH: "existing-path" });
     assert.equal(environment.GIT_CONFIG_KEY_0, "http.https://github.com/.extraheader");
