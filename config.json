@@ -1,6 +1,10 @@
 {
   "terminalDependencies": [
     {
+      "name": "PowerShell",
+      "installCommand": "node scripts/install-powershell.js"
+    },
+    {
       "name": "GitHub Copilot CLI",
       "installCommand": {
         "linux": "npm install --no-save --package-lock=false @github/copilot@1.0.89",

@@ -106,6 +106,9 @@ test("terminal WebSocket creates gup terminals and rejects removed clone command
     assert.equal(created.type, "terminal-created");
     assert.match(created.terminal.name, /^gup \(\d+\)$/);
     assert.equal(spawnOptions.options.cwd, process.env.GUP_ROOT);
+    assert.equal(spawnOptions.shell, process.platform === "win32"
+      ? "powershell.exe"
+      : path.join(__dirname, "node_modules", ".bin", "pwsh"));
     assert.equal(spawnOptions.args[0], "-NoLogo");
     assert.equal(spawnOptions.args[1], "-NoExit");
     assert.match(spawnOptions.args[3], /gup\.ps1/);

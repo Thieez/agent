@@ -225,7 +225,10 @@ webSockets.on("connection", (socket) => {
       try {
         const gupScriptPath = path.join(GUP_ROOT, "gup.ps1");
         await access(gupScriptPath);
-        const shell = process.platform === "win32" ? "powershell.exe" : "pwsh";
+        const shell = process.platform === "win32"
+          ? "powershell.exe"
+          : (process.env.PWSH_PATH || path.join(__dirname, "node_modules", ".bin", "pwsh"));
+        if (process.platform !== "win32") await access(shell);
         const gupScript = gupScriptPath.replace(/'/g, "''");
         const processTerminal = pty.spawn(shell, [
           "-NoLogo",
@@ -259,7 +262,7 @@ webSockets.on("connection", (socket) => {
         return safeSend(socket, {
           type: "error",
           text: error.code === "ENOENT"
-            ? "Nie znaleziono PowerShell albo skryptu gup.ps1. Sprawdź instalację i GUP_ROOT."
+            ? "Nie znaleziono PowerShell albo skryptu gup.ps1. Sprawdź instalację PowerShell i GUP_ROOT."
             : `Nie udało się uruchomić terminala gup: ${error.message}`
         });
       }
