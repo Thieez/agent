@@ -5,7 +5,6 @@ const path = require("node:path");
 const agentRoot = path.resolve(__dirname, "..");
 const gupRoot = path.join(agentRoot, "gup");
 const gupRepository = "https://github.com/Tomasz-Gziut/gup.git";
-const gupApiEndpoint = "https://api.github.com/repos/Tomasz-Gziut/gup";
 
 async function pathExists(target) {
   try {
@@ -68,44 +67,28 @@ function gitEnvironment(token, environment = process.env) {
   return env;
 }
 
-async function verifyGitHubAccess(token, fetchImplementation = fetch) {
-  let response;
-  try {
-    response = await fetchImplementation(gupApiEndpoint, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "X-GitHub-Api-Version": "2022-11-28"
-      },
-      signal: AbortSignal.timeout(15000)
-    });
-  } catch (error) {
-    throw new Error(`Could not verify access to the private gup repository: ${error.message}`);
-  }
+async function verifyGitHubAccess(token, spawnImplementation = spawnSync) {
+  const result = spawnImplementation("git", [
+    "ls-remote",
+    "--exit-code",
+    gupRepository,
+    "HEAD"
+  ], {
+    encoding: "utf8",
+    stdio: ["ignore", "ignore", "pipe"],
+    windowsHide: true,
+    env: gitEnvironment(token)
+  });
+  if (result.error) throw result.error;
+  if (result.status === 0) return;
 
-  if (response.status === 401) {
-    const error = new Error("GitHub rejected this token.");
-    error.status = response.status;
+  const detail = typeof result.stderr === "string" ? result.stderr : "";
+  if (/authentication failed|repository not found|could not read username|returned error:\s*(401|403|404)/i.test(detail)) {
+    const error = new Error("GitHub denied access to the private repository.");
+    error.accessDenied = true;
     throw error;
   }
-  if (response.status === 403) {
-    const error = new Error("GitHub denied access to the repository.");
-    error.status = response.status;
-    throw error;
-  }
-  if (response.status === 404) {
-    const error = new Error("The private repository was not found for this token.");
-    error.status = response.status;
-    throw error;
-  }
-  if (!response.ok) {
-    throw new Error(`GitHub could not verify access to Tomasz-Gziut/gup (HTTP ${response.status}).`);
-  }
-
-  const repository = await response.json();
-  if (repository.full_name?.toLowerCase() !== "tomasz-gziut/gup") {
-    throw new Error("GitHub returned an unexpected repository while verifying access to Tomasz-Gziut/gup.");
-  }
+  throw new Error("Could not check Git access to Tomasz-Gziut/gup. Verify network connectivity and Git installation.");
 }
 
 async function selectGitHubToken(tokens, verify = verifyGitHubAccess) {
@@ -120,7 +103,7 @@ async function selectGitHubToken(tokens, verify = verifyGitHubAccess) {
       await verify(token.value);
       return token;
     } catch (error) {
-      if (![401, 403, 404].includes(error.status)) throw error;
+      if (!error.accessDenied) throw error;
       rejected.push(token.name);
     }
   }

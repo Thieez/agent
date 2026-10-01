@@ -45,7 +45,7 @@ test("selects the first token with access after rejecting earlier aliases", asyn
     attempted.push(token);
     if (token === "invalid") {
       const error = new Error("not authorized");
-      error.status = 404;
+      error.accessDenied = true;
       throw error;
     }
   });
@@ -60,7 +60,7 @@ test("reports which token aliases could not read the private repository", async 
       { name: "GITHUB_TOKEN_WORK", value: "bad-two" }
     ], async () => {
       const error = new Error("not authorized");
-      error.status = 404;
+      error.accessDenied = true;
       throw error;
     }),
     /checked GITHUB_TOKEN, GITHUB_TOKEN_WORK/
@@ -70,24 +70,29 @@ test("reports which token aliases could not read the private repository", async 
 test("reports missing private-repository access without disclosing credentials", async () => {
   const secret = "inaccessible-token";
   await assert.rejects(
-    verifyGitHubAccess(secret, async (url, options) => {
-      assert.equal(url, "https://api.github.com/repos/Tomasz-Gziut/gup");
-      assert.equal(options.headers.Authorization, `Bearer ${secret}`);
-      return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+    verifyGitHubAccess(secret, (command, args, options) => {
+      assert.equal(command, "git");
+      assert.deepEqual(args, [
+        "ls-remote",
+        "--exit-code",
+        "https://github.com/Tomasz-Gziut/gup.git",
+        "HEAD"
+      ]);
+      assert.equal(options.stdio[1], "ignore");
+      assert.ok(options.env.GIT_CONFIG_VALUE_0.includes(Buffer.from(`x-access-token:${secret}`).toString("base64")));
+      return { status: 128, stderr: "remote: Repository not found.\nfatal: repository not found" };
     }),
     (error) => {
       assert.match(error.message, /private repository/);
       assert.equal(error.message.includes(secret), false);
+      assert.equal(error.accessDenied, true);
       return true;
     }
   );
 });
 
 test("accepts a token with access to the expected private repository", async () => {
-  await verifyGitHubAccess("authorized-token", async () => new Response(
-    JSON.stringify({ full_name: "Tomasz-Gziut/gup" }),
-    { status: 200 }
-  ));
+  verifyGitHubAccess("authorized-token", () => ({ status: 0, stderr: "" }));
 });
 
 test("reads GitHub credentials and adds authentication without exposing the token", async () => {
